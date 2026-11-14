@@ -27,7 +27,10 @@ Outputs:
 import os
 import sys
 import time
+import tempfile
 from collections import deque
+
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "mpl_cache"))
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -260,15 +263,22 @@ class DecentralizedRobot:
 
 
 class SwarmSimulation:
-    def __init__(self, blueprint_func, num_robots=20, aco_enabled=True, failure_rate=0.0, seed=42):
+    def __init__(self, blueprint_func, num_robots=20, aco_enabled=True, failure_rate=0.0, seed=42, relocation_enabled=True, deadlock_threshold=45, obstacles=None, depots=None):
         self.rng = np.random.RandomState(seed)
         self.num_robots = num_robots
         self.aco_enabled = aco_enabled
         self.failure_rate = failure_rate
+        self.relocation_enabled = relocation_enabled
+        self.deadlock_threshold = deadlock_threshold
+        self.relocated_blocks = []
+        self.relocation_log = []
 
         self.target_height = blueprint_func()
         self.current_height = np.zeros((GRID, GRID), dtype=np.int32)
-        self.obstacles = np.zeros((GRID, GRID), dtype=bool)
+        if obstacles is not None:
+            self.obstacles = obstacles.copy()
+        else:
+            self.obstacles = np.zeros((GRID, GRID), dtype=bool)
         self.pheromone_build = np.full((GRID, GRID), 0.01, dtype=np.float64)
         self.pheromone_trail = np.full((GRID, GRID), 0.01, dtype=np.float64)
 
@@ -290,7 +300,10 @@ class SwarmSimulation:
         self.blocks_placed = 0
         self.tick_count = 0
 
-        self.depots = pso_optimize_depots(self.target_height, self.obstacles, 4, self.rng)
+        if depots is not None:
+            self.depots = list(depots)
+        else:
+            self.depots = pso_optimize_depots(self.target_height, self.obstacles, 4, self.rng)
         self.dep_rank = compile_dependency_rank(self.target_height, self.depots, self.obstacles)
 
         self.occupancy = np.full((GRID, GRID), -1, dtype=np.int32)
@@ -346,6 +359,264 @@ class SwarmSimulation:
             "total": {"placed": t_plc, "total": t_tot, "pct": t_pct},
         }
 
+    # ── Safe Temporary Block Relocation & Deadlock Recovery ─────────────────
+    def compute_traversable_reachability(self, height_grid=None):
+        if height_grid is None:
+            height_grid = self.current_height
+        visited = np.zeros((GRID, GRID), dtype=bool)
+        queue = deque()
+        for dx, dy in self.depots:
+            dx, dy = int(dx), int(dy)
+            if 0 <= dx < GRID and 0 <= dy < GRID and not self.obstacles[dx, dy]:
+                visited[dx, dy] = True
+                queue.append((dx, dy))
+        while queue:
+            cx, cy = queue.popleft()
+            ch = height_grid[cx, cy]
+            for ddx, ddy in DIR4:
+                nx, ny = cx + ddx, cy + ddy
+                if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and not visited[nx, ny]:
+                    if abs(int(height_grid[nx, ny]) - int(ch)) <= 1:
+                        visited[nx, ny] = True
+                        queue.append((nx, ny))
+        return visited
+
+    def get_unreachable_unbuilt_cells(self, height_grid=None):
+        if height_grid is None:
+            height_grid = self.current_height
+        reach = self.compute_traversable_reachability(height_grid)
+        unreachable = []
+        active_phase = self.get_current_build_phase()
+        for x in range(GRID):
+            for y in range(GRID):
+                if self.target_height[x, y] > height_grid[x, y] and self.build_phase[x, y] <= active_phase:
+                    has_reachable_stand = False
+                    for dx, dy in DIR4:
+                        sx, sy = x + dx, y + dy
+                        if 0 <= sx < GRID and 0 <= sy < GRID and not self.obstacles[sx, sy]:
+                            if reach[sx, sy]:
+                                has_reachable_stand = True
+                                break
+                    if not has_reachable_stand:
+                        unreachable.append((x, y))
+        return unreachable, reach
+
+    def find_safe_staging_cell(self, bx, by):
+        temp_h = self.current_height.copy()
+        temp_h[bx, by] = 99
+        reach_ext = self.compute_traversable_reachability(temp_h)
+        if not np.any(reach_ext):
+            reach_ext = self.compute_traversable_reachability(self.current_height)
+
+        for min_open in (3, 2):
+            candidates = []
+            for r in range(1, 12):
+                for dx in range(-r, r + 1):
+                    for dy in range(-r, r + 1):
+                        if abs(dx) + abs(dy) != r:
+                            continue
+                        sx, sy = bx + dx, by + dy
+                        if not (0 <= sx < GRID and 0 <= sy < GRID):
+                            continue
+                        if self.target_height[sx, sy] > 0 or self.current_height[sx, sy] > 0 or self.obstacles[sx, sy]:
+                            continue
+                        if any(d[0] == sx and d[1] == sy for d in self.depots):
+                            continue
+                        if self.occupancy[sx, sy] >= 0:
+                            continue
+                        if not reach_ext[sx, sy]:
+                            continue
+                        open_neighbors = sum(
+                            1 for ddx, ddy in DIR4
+                            if 0 <= sx + ddx < GRID and 0 <= sy + ddy < GRID
+                            and not self.obstacles[sx + ddx, sy + ddy]
+                            and self.target_height[sx + ddx, sy + ddy] == 0
+                        )
+                        if open_neighbors >= min_open:
+                            candidates.append((sx, sy, r, open_neighbors))
+                if candidates:
+                    candidates.sort(key=lambda c: (c[2], -c[3]))
+                    return (candidates[0][0], candidates[0][1])
+        return None
+
+    def find_blocking_candidates(self, unreachable_cells):
+        base_unreachable_count = len(unreachable_cells)
+        if base_unreachable_count == 0:
+            return []
+        candidates = []
+        built_cells = np.argwhere(self.current_height > 0)
+        for bx, by in built_cells:
+            if self.occupancy[bx, by] >= 0:
+                continue
+            if self.current_height[bx, by] <= 0:
+                continue
+            temp_h = self.current_height.copy()
+            temp_h[bx, by] -= 1
+            new_unreachable, _ = self.get_unreachable_unbuilt_cells(temp_h)
+            unblocked_count = base_unreachable_count - len(new_unreachable)
+            if unblocked_count > 0:
+                unblocked_cells = [c for c in unreachable_cells if c not in new_unreachable]
+                candidates.append({
+                    "cell": (int(bx), int(by)),
+                    "current_h": int(self.current_height[bx, by]),
+                    "unblocked_count": unblocked_count,
+                    "unblocked_cells": unblocked_cells
+                })
+        candidates.sort(key=lambda c: c["unblocked_count"], reverse=True)
+        return candidates
+
+    def is_active_relocated_cell(self, x, y):
+        for r in self.relocated_blocks:
+            if r["status"] == "staged" and r["origin"] == (x, y):
+                return True
+        return False
+
+    def attempt_deadlock_recovery(self):
+        unreachable, reach = self.get_unreachable_unbuilt_cells()
+        if len(unreachable) == 0:
+            return None
+        candidates = self.find_blocking_candidates(unreachable)
+        if not candidates:
+            self.relocation_log.append({
+                "status": "REFUSED",
+                "reason": "NO_BLOCKING_CANDIDATE_FOUND",
+                "tick": self.tick_count,
+                "jam_location": unreachable[0],
+            })
+            return None
+        for cand in candidates:
+            bx, by = cand["cell"]
+            staging = self.find_safe_staging_cell(bx, by)
+            if staging is None:
+                continue
+            sx, sy = staging
+            self.current_height[bx, by] -= 1
+            self.current_height[sx, sy] += 1
+            self.blocks_placed -= 1
+            rec = {
+                "id": len(self.relocated_blocks) + 1,
+                "origin": (bx, by),
+                "target_height": int(self.target_height[bx, by]),
+                "staged_cell": (sx, sy),
+                "height_level": int(self.current_height[bx, by] + 1),
+                "status": "staged",
+                "tick_relocated": self.tick_count,
+                "tick_restored": None,
+                "dependent_cells": cand["unblocked_cells"],
+            }
+            self.relocated_blocks.append(rec)
+            self.relocation_log.append({
+                "status": "RELOCATED",
+                "id": rec["id"],
+                "origin": (bx, by),
+                "staged_cell": (sx, sy),
+                "unblocked_count": cand["unblocked_count"],
+                "tick": self.tick_count,
+            })
+            self.ticks_since_placement = 0
+            return rec
+
+        self.relocation_log.append({
+            "status": "REFUSED",
+            "reason": "NO_SAFE_STAGING_CELL",
+            "tick": self.tick_count,
+            "jam_location": candidates[0]["cell"],
+        })
+        return None
+
+    def check_and_restore_relocated_blocks(self):
+        staged = [r for r in self.relocated_blocks if r["status"] == "staged"]
+        if not staged:
+            return
+        for r in staged:
+            dep_done = True
+            for dx, dy in r["dependent_cells"]:
+                if self.current_height[dx, dy] < self.target_height[dx, dy]:
+                    dep_done = False
+                    break
+            if not dep_done:
+                continue
+
+            bx, by = r["origin"]
+            sx, sy = r["staged_cell"]
+
+            if self.occupancy[bx, by] >= 0 or self.occupancy[sx, sy] >= 0:
+                continue
+
+            temp_h = self.current_height.copy()
+            temp_h[bx, by] += 1
+            temp_h[sx, sy] -= 1
+            reach = self.compute_traversable_reachability(temp_h)
+            robots_safe = True
+            for bot in self.robots:
+                if not bot.failed and not reach[bot.x, bot.y]:
+                    robots_safe = False
+                    break
+            if not robots_safe:
+                continue
+
+            self.current_height[sx, sy] -= 1
+            self.current_height[bx, by] += 1
+            self.blocks_placed += 1
+            r["status"] = "restored"
+            r["tick_restored"] = self.tick_count
+            self.relocation_log.append({
+                "status": "RESTORED",
+                "id": r["id"],
+                "origin": (bx, by),
+                "staged_cell": (sx, sy),
+                "tick": self.tick_count,
+            })
+
+    def audit_completion(self):
+        mismatches = []
+        for x in range(GRID):
+            for y in range(GRID):
+                if self.current_height[x, y] != self.target_height[x, y]:
+                    mismatches.append(((x, y), int(self.current_height[x, y]), int(self.target_height[x, y])))
+        staged = [r for r in self.relocated_blocks if r["status"] == "staged"]
+        exact_match = (len(mismatches) == 0 and len(staged) == 0)
+        return {
+            "exact_match": exact_match,
+            "total_target_blocks": int(np.sum(self.target_height)),
+            "total_current_blocks": int(np.sum(self.current_height)),
+            "mismatched_cells": mismatches,
+            "active_relocations": len(staged),
+            "total_relocations": len(self.relocated_blocks),
+            "relocation_log": list(self.relocation_log),
+        }
+
+    def compute_unbuilt_gradient(self):
+        dist_grid = np.full((GRID, GRID), 9999, dtype=np.int32)
+        active_phase = self.get_current_build_phase()
+        unbuilt_mask = (self.target_height > self.current_height) & (self.build_phase <= active_phase)
+        for r in self.relocated_blocks:
+            if r["status"] == "staged":
+                unbuilt_mask[r["origin"][0], r["origin"][1]] = False
+        pts = np.argwhere(unbuilt_mask)
+        if len(pts) == 0:
+            return dist_grid
+        queue = deque()
+        for x, y in pts:
+            for dx, dy in DIR4:
+                sx, sy = x + dx, y + dy
+                if 0 <= sx < GRID and 0 <= sy < GRID and not self.obstacles[sx, sy]:
+                    if dist_grid[sx, sy] > 0:
+                        dist_grid[sx, sy] = 0
+                        queue.append((sx, sy))
+        while queue:
+            cx, cy = queue.popleft()
+            cd = dist_grid[cx, cy]
+            ch = self.current_height[cx, cy]
+            for dx, dy in DIR4:
+                nx, ny = cx + dx, cy + dy
+                if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny]:
+                    if abs(int(self.current_height[nx, ny]) - int(ch)) <= 1:
+                        if cd + 1 < dist_grid[nx, ny]:
+                            dist_grid[nx, ny] = cd + 1
+                            queue.append((nx, ny))
+        return dist_grid
+
     def can_traverse(self, from_x, from_y, to_x, to_y):
         if not (0 <= to_x < GRID and 0 <= to_y < GRID):
             return False
@@ -361,12 +632,12 @@ class SwarmSimulation:
         stalled_ticks = getattr(self, "ticks_since_placement", 0)
         active_phase = self.get_current_build_phase()
 
-        # Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build,
-        # NEVER during Phase 0 pillar construction so central core cells are never trapped by premature outer walls.
+        # Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build (<= 5 blocks left),
+        # NEVER during active core construction so inner cells are never trapped by premature outer walls.
         relax_anti_trap = (
-            ((remaining <= 8 and stalled_ticks >= 15) or (stalled_ticks >= 45))
-            if active_phase == 1
-            else (stalled_ticks >= 200)
+            (remaining <= 5 and stalled_ticks >= 40) or
+            (active_phase == 1 and remaining <= 10 and stalled_ticks >= 15) or
+            (stalled_ticks >= 300)
         )
 
         for dx, dy in DIR4:
@@ -382,17 +653,40 @@ class SwarmSimulation:
             # Central pillar interior core invariant:
             # Cell (15, 16) serves as the southern access ramp from ground level (0) to the core (15, 15).
             # It must not exceed height 1 until the central core (15, 15) has reached its target height 3.
-            cx, cy = 15, 15
-            if bx == cx and by == cy + 1 and self.current_height[cx, cy] < 3:
-                if self.current_height[bx, by] >= 1:
-                    continue
-            if cx - 1 <= bx <= cx + 1 and cy - 1 <= by <= cy + 1 and not (bx == cx and by == cy):
-                if self.current_height[bx, by] >= self.current_height[cx, cy]:
-                    continue
+            if self.target_height[15, 15] == 3 and np.any(self.build_phase == 1):
+                cx, cy = 15, 15
+                if bx == cx and by == cy + 1 and self.current_height[cx, cy] < 3:
+                    if self.current_height[bx, by] >= 1:
+                        continue
+                if cx - 1 <= bx <= cx + 1 and cy - 1 <= by <= cy + 1 and not (bx == cx and by == cy):
+                    if self.current_height[bx, by] >= self.current_height[cx, cy]:
+                        continue
 
             if self.current_height[bx, by] >= self.target_height[bx, by]:
                 continue
+            if self.is_active_relocated_cell(bx, by):
+                continue
             if self.obstacles[bx, by] or self.occupancy[bx, by] >= 0:
+                continue
+
+            # Anti-robot-trapping check: never place a block that eliminates the last descent route of an adjacent robot on a higher tier
+            traps_robot = False
+            for ddx, ddy in DIR4:
+                ox, oy = bx + ddx, by + ddy
+                if 0 <= ox < GRID and 0 <= oy < GRID and self.occupancy[ox, oy] >= 0:
+                    occ_h = self.current_height[ox, oy]
+                    if occ_h > 0:
+                        has_exit = False
+                        for edx, edy in DIR4:
+                            ex, ey = ox + edx, oy + edy
+                            if 0 <= ex < GRID and 0 <= ey < GRID and not (ex == bx and ey == by) and not self.obstacles[ex, ey]:
+                                if abs(self.current_height[ex, ey] - occ_h) <= 1:
+                                    has_exit = True
+                                    break
+                        if not has_exit:
+                            traps_robot = True
+                            break
+            if traps_robot:
                 continue
 
             if not relax_anti_trap:
@@ -439,6 +733,8 @@ class SwarmSimulation:
                 for ddx, ddy in shuffled:
                     ox, oy = occ.x + ddx, occ.y + ddy
                     if 0 <= ox < GRID and 0 <= oy < GRID and not self.obstacles[ox, oy] and self.can_traverse(occ.x, occ.y, ox, oy) and self.occupancy[ox, oy] < 0:
+                        if self.current_height[ox, oy] > self.current_height[occ.x, occ.y]:
+                            continue  # Never displace onto higher tier
                         self.occupancy[occ.x, occ.y] = -1
                         occ.x, occ.y = ox, oy
                         self.occupancy[ox, oy] = occ_id
@@ -492,10 +788,11 @@ class SwarmSimulation:
 
         prev_placed = self.blocks_placed
 
-        # Precompute active unbuilt coordinates ONCE per tick (respecting active build phase)
-        active_phase = self.get_current_build_phase()
-        unbuilt_mask = (self.target_height > self.current_height) & (self.build_phase <= active_phase)
-        unbuilt_pts = np.argwhere(unbuilt_mask) if np.any(unbuilt_mask) else None
+        if self.relocation_enabled:
+            self.check_and_restore_relocated_blocks()
+
+        # Precompute active unbuilt topological gradient ONCE per tick
+        unbuilt_dist = self.compute_unbuilt_gradient()
 
         order = self.rng.permutation(len(self.robots))
 
@@ -506,6 +803,10 @@ class SwarmSimulation:
 
             if bot.state == STATE_SEEK:
                 if self.is_depot(bot.x, bot.y):
+                    if self.blocks_placed >= self.total_blocks:
+                        bot.carrying = False
+                        bot.state = STATE_SEEK
+                        continue
                     bot.carrying = True
                     bot.trip_steps = 0
                     bot.path_memory.clear()
@@ -513,30 +814,64 @@ class SwarmSimulation:
                     bot.state = STATE_CARRY
                     continue
 
+                cur_h = self.current_height[bot.x, bot.y]
                 best_rank = self.dep_rank[bot.x, bot.y]
                 candidates = []
                 shuffled = [DIR4[i] for i in self.rng.permutation(4)]
                 for dx, dy in shuffled:
                     nx, ny = bot.x + dx, bot.y + dy
                     if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
-                        if self.dep_rank[nx, ny] < best_rank:
-                            candidates.append((nx, ny, self.dep_rank[nx, ny]))
+                        nh = self.current_height[nx, ny]
+                        if cur_h > 0 and nh > cur_h:
+                            continue  # When descending/seeking, never climb to a higher tier
+                        if self.total_blocks > 0 and self.blocks_placed >= self.total_blocks and cur_h == 0 and nh > 0:
+                            continue
+
+                        if cur_h > 0:
+                            if nh < cur_h or self.dep_rank[nx, ny] <= best_rank:
+                                score = (cur_h - nh) * 1000 - self.dep_rank[nx, ny]
+                                candidates.append((nx, ny, score))
+                        else:
+                            if self.dep_rank[nx, ny] < best_rank:
+                                candidates.append((nx, ny, -self.dep_rank[nx, ny]))
 
                 if candidates:
-                    candidates.sort(key=lambda c: c[2])
+                    candidates.sort(key=lambda c: -c[2])
                     moved = False
                     for cx, cy, _ in candidates:
                         if self.try_move(bot, cx, cy):
                             moved = True
                             break
                     if not moved:
+                        for dx, dy in shuffled:
+                            nx, ny = bot.x + dx, bot.y + dy
+                            if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
+                                if cur_h > 0 and self.current_height[nx, ny] > cur_h:
+                                    continue
+                                if self.total_blocks > 0 and self.blocks_placed >= self.total_blocks and cur_h == 0 and self.current_height[nx, ny] > 0:
+                                    continue
+                                if self.try_move(bot, nx, ny):
+                                    break
+                else:
+                    step_down_done = False
+                    if cur_h > 0:
+                        for dx, dy in shuffled:
+                            nx, ny = bot.x + dx, bot.y + dy
+                            if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
+                                if self.current_height[nx, ny] < cur_h:
+                                    if self.try_move(bot, nx, ny):
+                                        step_down_done = True
+                                        break
+                    if not step_down_done:
                         dx, dy = shuffled[0]
                         self.try_move(bot, bot.x + dx, bot.y + dy)
-                else:
-                    dx, dy = shuffled[0]
-                    self.try_move(bot, bot.x + dx, bot.y + dy)
 
             elif bot.state == STATE_CARRY:
+                if self.blocks_placed >= self.total_blocks:
+                    bot.carrying = False
+                    bot.state = STATE_SEEK
+                    continue
+
                 bot.trip_steps += 1
                 place_cell = self.find_placement_cell(bot.x, bot.y)
                 if place_cell is not None:
@@ -545,6 +880,32 @@ class SwarmSimulation:
                     continue
 
                 shuffled = [DIR4[i] for i in self.rng.permutation(4)]
+
+                # If no unbuilt cells remain reachable, follow decreasing dep_rank back to depot
+                if not np.any(unbuilt_dist < 9999):
+                    if self.is_depot(bot.x, bot.y):
+                        bot.carrying = False
+                        bot.state = STATE_SEEK
+                        continue
+                    cur_h = self.current_height[bot.x, bot.y]
+                    best_rank = self.dep_rank[bot.x, bot.y]
+                    candidates = []
+                    for dx, dy in shuffled:
+                        nx, ny = bot.x + dx, bot.y + dy
+                        if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
+                            nh = self.current_height[nx, ny]
+                            if cur_h > 0 and nh > cur_h:
+                                continue
+                            if cur_h > 0 and nh < cur_h:
+                                candidates.append((nx, ny, -1000 + self.dep_rank[nx, ny]))
+                            elif self.dep_rank[nx, ny] < best_rank:
+                                candidates.append((nx, ny, self.dep_rank[nx, ny]))
+                    if candidates:
+                        candidates.sort(key=lambda c: c[2])
+                        for cx, cy, _ in candidates:
+                            if self.try_move(bot, cx, cy):
+                                break
+                    continue
                 candidates = []
 
                 if self.aco_enabled:
@@ -553,21 +914,23 @@ class SwarmSimulation:
                         if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
                             tr = self.pheromone_trail[nx, ny]
                             pb = self.pheromone_build[nx, ny]
-                            if unbuilt_pts is not None and len(unbuilt_pts) > 0:
-                                d = np.min(np.abs(unbuilt_pts[:, 0] - nx) + np.abs(unbuilt_pts[:, 1] - ny))
+                            d = unbuilt_dist[nx, ny]
+                            if d < 9999:
+                                beacon = 20.0 / (d + 1.0)
+                                score = (tr * 3.5) + (pb * 6.0) + beacon + self.rng.uniform(0, 2.5)
                             else:
-                                d = 1
-                            score = (tr * 3.5) + (pb * 6.0) + (20.0 / (d + 1.0)) + self.rng.uniform(0, 2.5)
+                                score = -50.0 + self.rng.uniform(0, 2.0)
                             candidates.append((nx, ny, score))
                 else:
                     for dx, dy in shuffled:
                         nx, ny = bot.x + dx, bot.y + dy
                         if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny):
-                            if unbuilt_pts is not None and len(unbuilt_pts) > 0:
-                                d = np.min(np.abs(unbuilt_pts[:, 0] - nx) + np.abs(unbuilt_pts[:, 1] - ny))
+                            d = unbuilt_dist[nx, ny]
+                            if d < 9999:
+                                beacon = 20.0 / (d + 1.0)
+                                score = beacon + self.rng.uniform(0, 4.0)
                             else:
-                                d = 1
-                            score = (20.0 / (d + 1.0)) + self.rng.uniform(0, 4.0)
+                                score = -50.0 + self.rng.uniform(0, 2.0)
                             candidates.append((nx, ny, score))
 
                 if candidates:
@@ -583,13 +946,13 @@ class SwarmSimulation:
                         bot.stuck_ticks += 1
                         if bot.stuck_ticks > 3:
                             bot.state = STATE_YIELD
-                            bot.backoff_steps = int(2 + self.rng.randint(0, 3))
+                            bot.backoff_steps = 2 + self.rng.randint(0, 3)
                             bot.stuck_ticks = 0
                 else:
                     bot.stuck_ticks += 1
                     if bot.stuck_ticks > 3:
                         bot.state = STATE_YIELD
-                        bot.backoff_steps = int(2 + self.rng.randint(0, 3))
+                        bot.backoff_steps = 2 + self.rng.randint(0, 3)
                         bot.stuck_ticks = 0
 
             elif bot.state == STATE_INSPECT:
@@ -624,17 +987,24 @@ class SwarmSimulation:
                     bot.stuck_ticks = 0
 
             elif bot.state == STATE_YIELD:
+                cur_h = self.current_height[bot.x, bot.y]
                 shuffled = [DIR4[i] for i in self.rng.permutation(4)]
+                if cur_h > 0:
+                    shuffled.sort(key=lambda d: self.current_height[bot.x + d[0], bot.y + d[1]] if (0 <= bot.x + d[0] < GRID and 0 <= bot.y + d[1] < GRID) else 99)
                 for dx, dy in shuffled:
                     nx, ny = bot.x + dx, bot.y + dy
                     if 0 <= nx < GRID and 0 <= ny < GRID and not self.obstacles[nx, ny] and self.can_traverse(bot.x, bot.y, nx, ny) and self.occupancy[nx, ny] < 0:
+                        if self.current_height[nx, ny] > cur_h:
+                            continue  # Never step up while yielding
+                        if self.total_blocks > 0 and self.blocks_placed >= self.total_blocks and cur_h == 0 and self.current_height[nx, ny] > 0:
+                            continue
                         self.occupancy[bot.x, bot.y] = -1
                         bot.x, bot.y = nx, ny
                         self.occupancy[nx, ny] = bot.id
                         break
                 bot.backoff_steps -= 1
                 if bot.backoff_steps <= 0:
-                    bot.state = STATE_CARRY if bot.carrying else STATE_SEEK
+                    bot.state = STATE_CARRY if (bot.carrying and self.blocks_placed < self.total_blocks) else STATE_SEEK
                     bot.stuck_ticks = 0
 
         placed_this_tick = self.blocks_placed - prev_placed
@@ -644,8 +1014,28 @@ class SwarmSimulation:
             self.ticks_since_placement += 1
         self.throughput_window.append(placed_this_tick)
 
+        if self.relocation_enabled and self.ticks_since_placement >= self.deadlock_threshold:
+            self.attempt_deadlock_recovery()
+
+    def get_robots_on_structure_count(self):
+        count = 0
+        for bot in self.robots:
+            if not bot.failed and 0 <= bot.x < GRID and 0 <= bot.y < GRID:
+                if self.current_height[bot.x, bot.y] > 0:
+                    count += 1
+        return count
+
     def is_complete(self):
-        return self.blocks_placed >= self.total_blocks
+        if self.total_blocks <= 0 or self.blocks_placed < self.total_blocks:
+            self.evacuation_ticks = 0
+            return False
+        if not hasattr(self, "evacuation_ticks"):
+            self.evacuation_ticks = 0
+        on_structure = self.get_robots_on_structure_count()
+        if on_structure > 0 and self.evacuation_ticks < 45:
+            self.evacuation_ticks += 1
+            return False
+        return True
 
 
 # ── Batch Experiment Execution ───────────────────────────────────────────────

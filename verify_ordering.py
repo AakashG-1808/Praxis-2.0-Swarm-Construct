@@ -11,6 +11,9 @@ Tests:
 """
 
 import sys
+import tempfile
+import os
+os.environ.setdefault("MPLCONFIGDIR", os.path.join(tempfile.gettempdir(), "mpl_cache"))
 import numpy as np
 from run_experiments import SwarmSimulation, blueprint_walled_room
 
@@ -70,8 +73,9 @@ def run_ordering_check():
                         if sim.current_height[x, y] != 0:
                             interior_clean = False
 
+            audit = sim.audit_completion()
             status = "COMPLETED" if is_comp else "TIMED_OUT"
-            passed = (violation is None and is_comp and exact_match and doorway_open and window_open and interior_clean)
+            passed = (violation is None and is_comp and exact_match and doorway_open and window_open and interior_clean and audit["exact_match"] and audit["active_relocations"] == 0)
 
             if passed:
                 passed_runs += 1

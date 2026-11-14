@@ -1598,7 +1598,16 @@
       const pct = total > 0 ? ((placed / total) * 100).toFixed(1) : "0.0";
 
       const progEl = document.getElementById("t-progress");
-      progEl.textContent = `${placed} / ${total} (${pct}%)`;
+      if (state.evacuating) {
+        progEl.textContent = `${placed} / ${total} (${pct}%) 🚶 Evacuating (${state.robotsOnStructure} on tiers)`;
+        progEl.style.color = "#38bdf8";
+      } else if (placed >= total && total > 0) {
+        progEl.textContent = `${placed} / ${total} (${pct}%) ✨ 100% Cleared`;
+        progEl.style.color = "#10b981";
+      } else {
+        progEl.textContent = `${placed} / ${total} (${pct}%)`;
+        progEl.style.color = "";
+      }
       if (state.regionalProgress && state.regionalProgress.pillar) {
         const p = state.regionalProgress.pillar;
         const w = state.regionalProgress.perimeter;

@@ -79,11 +79,16 @@ const SimEngine = (function () {
   let acoMode = true;
   let currentBlueprintName = "walledRoom";
   let unbuiltDistGrid = null;
+  let evacuationTicks = 0;
 
   // Stretch-goal feature states
   let heterogeneousRoles = false;
   let batteryEnabled = false;
   let sensorNoise = 0.0;
+  let relocationEnabled = true;
+  let deadlockThreshold = 45;
+  let relocatedBlocks = [];
+  let relocationLog = [];
   let movingHazard = {
     enabled: false,
     x: 8,
@@ -489,6 +494,283 @@ const SimEngine = (function () {
     return dr;
   }
 
+  // ── Safe Temporary Block Relocation & Deadlock Recovery ─────────────────
+  function computeTraversableReachability(heightGrid) {
+    heightGrid = heightGrid || currentHeight;
+    const visited = makeBoolGrid();
+    const queue = [];
+    for (const d of depots) {
+      const dx = d.x | 0, dy = d.y | 0;
+      if (inBounds(dx, dy) && !obstacles[dx][dy]) {
+        visited[dx][dy] = 1;
+        queue.push({ x: dx, y: dy });
+      }
+    }
+
+    let head = 0;
+    while (head < queue.length) {
+      const cur = queue[head++];
+      const ch = heightGrid[cur.x][cur.y];
+      for (const [ddx, ddy] of DIR4) {
+        const nx = cur.x + ddx, ny = cur.y + ddy;
+        if (inBounds(nx, ny) && !obstacles[nx][ny] && !visited[nx][ny]) {
+          if (Math.abs(heightGrid[nx][ny] - ch) <= 1) {
+            visited[nx][ny] = 1;
+            queue.push({ x: nx, y: ny });
+          }
+        }
+      }
+    }
+    return visited;
+  }
+
+  function getUnreachableUnbuiltCells(heightGrid) {
+    heightGrid = heightGrid || currentHeight;
+    const reach = computeTraversableReachability(heightGrid);
+    const unreachable = [];
+    const activePhase = getCurrentBuildPhase();
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        if (targetHeight[x][y] > heightGrid[x][y] && (!buildPhase || buildPhase[x][y] <= activePhase)) {
+          let hasReachableStand = false;
+          for (const [ddx, ddy] of DIR4) {
+            const sx = x + ddx, sy = y + ddy;
+            if (inBounds(sx, sy) && !obstacles[sx][sy]) {
+              if (reach[sx][sy]) {
+                hasReachableStand = true;
+                break;
+              }
+            }
+          }
+          if (!hasReachableStand) {
+            unreachable.push({ x, y });
+          }
+        }
+      }
+    }
+    return { unreachable, reach };
+  }
+
+  function findSafeStagingCell(bx, by) {
+    const tempH = makeGrid(0);
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) tempH[x][y] = currentHeight[x][y];
+    }
+    tempH[bx][by] = 99;
+    let reachExt = computeTraversableReachability(tempH);
+    let hasReach = false;
+    for (let x = 0; x < GRID && !hasReach; x++) {
+      for (let y = 0; y < GRID && !hasReach; y++) {
+        if (reachExt[x][y]) hasReach = true;
+      }
+    }
+    if (!hasReach) reachExt = computeTraversableReachability(currentHeight);
+
+    for (const minOpen of [3, 2]) {
+      const candidates = [];
+      for (let r = 1; r <= 11; r++) {
+        for (let dx = -r; dx <= r; dx++) {
+          for (let dy = -r; dy <= r; dy++) {
+            if (Math.abs(dx) + Math.abs(dy) !== r) continue;
+            const sx = bx + dx, sy = by + dy;
+            if (!inBounds(sx, sy)) continue;
+            if (targetHeight[sx][sy] > 0 || currentHeight[sx][sy] > 0 || obstacles[sx][sy]) continue;
+            if (isDepot(sx, sy)) continue;
+            if (robotGrid[sx][sy] !== null) continue;
+            if (!reachExt[sx][sy]) continue;
+
+            let openNeighbors = 0;
+            for (const [ddx, ddy] of DIR4) {
+              const nx = sx + ddx, ny = sy + ddy;
+              if (inBounds(nx, ny) && !obstacles[nx][ny] && targetHeight[nx][ny] === 0) {
+                openNeighbors++;
+              }
+            }
+            if (openNeighbors >= minOpen) {
+              candidates.append ? candidates.append({ x: sx, y: sy, r, openNeighbors }) : candidates.push({ x: sx, y: sy, r, openNeighbors });
+            }
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => a.r !== b.r ? a.r - b.r : b.openNeighbors - a.openNeighbors);
+        return { x: candidates[0].x, y: candidates[0].y };
+      }
+    }
+    return null;
+  }
+
+  function findBlockingCandidates(unreachableCells) {
+    const baseCount = unreachableCells.length;
+    if (baseCount === 0) return [];
+    const candidates = [];
+
+    // Clone current height
+    const tempH = makeGrid(0);
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) tempH[x][y] = currentHeight[x][y];
+    }
+
+    for (let bx = 0; bx < GRID; bx++) {
+      for (let by = 0; by < GRID; by++) {
+        if (currentHeight[bx][by] <= 0) continue;
+        if (robotGrid[bx][by] !== null) continue;
+
+        tempH[bx][by] = currentHeight[bx][by] - 1;
+        const res = getUnreachableUnbuiltCells(tempH);
+        tempH[bx][by] = currentHeight[bx][by];
+
+        const unblockedCount = baseCount - res.unreachable.length;
+        if (unblockedCount > 0) {
+          const unblockedCells = unreachableCells.filter(c => !res.unreachable.some(u => u.x === c.x && u.y === c.y));
+          candidates.push({
+            x: bx,
+            y: by,
+            currentH: currentHeight[bx][by],
+            unblockedCount,
+            unblockedCells,
+          });
+        }
+      }
+    }
+    candidates.sort((a, b) => b.unblockedCount - a.unblockedCount);
+    return candidates;
+  }
+
+  function isActiveRelocatedCell(x, y) {
+    return relocatedBlocks.some(r => r.status === "staged" && r.origin.x === x && r.origin.y === y);
+  }
+
+  function attemptDeadlockRecovery() {
+    const { unreachable } = getUnreachableUnbuiltCells();
+    if (unreachable.length === 0) return null;
+
+    const candidates = findBlockingCandidates(unreachable);
+    if (candidates.length === 0) {
+      relocationLog.push({
+        status: "REFUSED",
+        reason: "NO_BLOCKING_CANDIDATE_FOUND",
+        tick: tickCount,
+        jamLocation: unreachable[0],
+      });
+      return null;
+    }
+
+    for (const cand of candidates) {
+      const staging = findSafeStagingCell(cand.x, cand.y);
+      if (!staging) continue;
+
+      currentHeight[cand.x][cand.y]--;
+      currentHeight[staging.x][staging.y]++;
+      blocksPlaced--;
+
+      const rec = {
+        id: relocatedBlocks.length + 1,
+        origin: { x: cand.x, y: cand.y },
+        targetHeight: targetHeight[cand.x][cand.y],
+        stagedCell: { x: staging.x, y: staging.y },
+        heightLevel: currentHeight[cand.x][cand.y] + 1,
+        status: "staged",
+        tickRelocated: tickCount,
+        tickRestored: null,
+        dependentCells: cand.unblockedCells,
+      };
+      relocatedBlocks.push(rec);
+      relocationLog.push({
+        status: "RELOCATED",
+        id: rec.id,
+        origin: { x: cand.x, y: cand.y },
+        stagedCell: { x: staging.x, y: staging.y },
+        unblockedCount: cand.unblockedCount,
+        tick: tickCount,
+      });
+
+      ticksSinceLastPlacement = 0;
+      return rec;
+    }
+
+    relocationLog.push({
+      status: "REFUSED",
+      reason: "NO_SAFE_STAGING_CELL",
+      tick: tickCount,
+      jamLocation: { x: candidates[0].x, y: candidates[0].y },
+    });
+    return null;
+  }
+
+  function checkAndRestoreRelocatedBlocks() {
+    const staged = relocatedBlocks.filter(r => r.status === "staged");
+    if (staged.length === 0) return;
+
+    for (const r of staged) {
+      let depDone = true;
+      for (const d of r.dependentCells) {
+        if (currentHeight[d.x][d.y] < targetHeight[d.x][d.y]) {
+          depDone = false;
+          break;
+        }
+      }
+      if (!depDone) continue;
+
+      const bx = r.origin.x, by = r.origin.y;
+      const sx = r.stagedCell.x, sy = r.stagedCell.y;
+
+      if (robotGrid[bx][by] !== null || robotGrid[sx][sy] !== null) continue;
+
+      currentHeight[bx][by]++;
+      currentHeight[sx][sy]--;
+      const reach = computeTraversableReachability();
+      let robotsSafe = true;
+      for (const bot of robots) {
+        if (!bot.failed && !reach[bot.x][bot.y]) {
+          robotsSafe = false;
+          break;
+        }
+      }
+      if (!robotsSafe) {
+        currentHeight[bx][by]--;
+        currentHeight[sx][sy]++;
+        continue;
+      }
+
+      blocksPlaced++;
+      r.status = "restored";
+      r.tickRestored = tickCount;
+      relocationLog.push({
+        status: "RESTORED",
+        id: r.id,
+        origin: { x: bx, y: by },
+        stagedCell: { x: sx, y: sy },
+        tick: tickCount,
+      });
+    }
+  }
+
+  function auditCompletion() {
+    const mismatches = [];
+    let totalTarget = 0;
+    let totalCurrent = 0;
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        totalTarget += targetHeight[x][y];
+        totalCurrent += currentHeight[x][y];
+        if (currentHeight[x][y] !== targetHeight[x][y]) {
+          mismatches.push({ x, y, current: currentHeight[x][y], target: targetHeight[x][y] });
+        }
+      }
+    }
+    const staged = relocatedBlocks.filter(r => r.status === "staged");
+    return {
+      exactMatch: mismatches.length === 0 && staged.length === 0,
+      totalTargetBlocks: totalTarget,
+      totalCurrentBlocks: totalCurrent,
+      mismatchedCells: mismatches,
+      activeRelocations: staged.length,
+      totalRelocations: relocatedBlocks.length,
+      relocationLog: relocationLog.slice(),
+    };
+  }
+
   // ── TERMES Climbing / Traversal Check ──────────────────────────────────────
   function isHazardCell(x, y) {
     if (!movingHazard || !movingHazard.enabled) return false;
@@ -526,11 +808,11 @@ const SimEngine = (function () {
     const remainingBlocks = totalBlocks - blocksPlaced;
     const activePhase = getCurrentBuildPhase();
 
-    // Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build,
-    // NEVER during Phase 0 pillar construction so central core cells are never trapped by premature outer walls.
-    const relaxAntiTrap = (activePhase === 1)
-      ? ((remainingBlocks <= 10 && ticksSinceLastPlacement >= 15) || (ticksSinceLastPlacement >= 45))
-      : (ticksSinceLastPlacement >= 200);
+    // Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build (<= 5 blocks left),
+    // NEVER during active core construction so inner cells are never trapped by premature outer walls.
+    const relaxAntiTrap = (remainingBlocks <= 5 && ticksSinceLastPlacement >= 40) ||
+      (activePhase === 1 && remainingBlocks <= 10 && ticksSinceLastPlacement >= 15) ||
+      (ticksSinceLastPlacement >= 300);
 
     for (const [dx, dy] of DIR4) {
       const bx = rx + dx, by = ry + dy;
@@ -553,8 +835,35 @@ const SimEngine = (function () {
       }
 
       if (currentHeight[bx][by] >= targetHeight[bx][by]) continue;
+      if (isActiveRelocatedCell(bx, by)) continue;
       if (obstacles[bx][by]) continue;
       if (robotGrid[bx][by] !== null) continue; // Cell must not be occupied by robot
+
+      // Anti-robot-trapping check: never place a block that blocks the last descent route of an adjacent robot on a higher tier
+      let trapsRobot = false;
+      for (const [ddx, ddy] of DIR4) {
+        const ox = bx + ddx, oy = by + ddy;
+        if (inBounds(ox, oy) && robotGrid[ox][oy] !== null) {
+          const occH = currentHeight[ox][oy];
+          if (occH > 0) {
+            let hasExit = false;
+            for (const [edx, edy] of DIR4) {
+              const ex = ox + edx, ey = oy + edy;
+              if (inBounds(ex, ey) && !(ex === bx && ey === by) && !obstacles[ex][ey]) {
+                if (Math.abs(currentHeight[ex][ey] - occH) <= 1) {
+                  hasExit = true;
+                  break;
+                }
+              }
+            }
+            if (!hasExit) {
+              trapsRobot = true;
+              break;
+            }
+          }
+        }
+      }
+      if (trapsRobot) continue;
 
       if (!relaxAntiTrap) {
         // Inside-Out Anti-Trap Check
@@ -606,6 +915,7 @@ const SimEngine = (function () {
         for (const [ddx, ddy] of shuffled) {
           const ox = occupant.x + ddx, oy = occupant.y + ddy;
           if (inBounds(ox, oy) && !obstacles[ox][oy] && canTraverse(occupant.x, occupant.y, ox, oy) && robotGrid[ox][oy] === null) {
+            if (currentHeight[ox][oy] > currentHeight[occupant.x][occupant.y]) continue; // Never displace onto higher tier
             robotGrid[occupant.x][occupant.y] = null;
             occupant.x = ox; occupant.y = oy;
             robotGrid[ox][oy] = occupant;
@@ -650,9 +960,28 @@ const SimEngine = (function () {
     return false;
   }
 
+  function getRobotsOnStructureCount() {
+    let count = 0;
+    if (!robots || !currentHeight) return 0;
+    for (const r of robots) {
+      if (!r.failed && inBounds(r.x, r.y) && currentHeight[r.x][r.y] > 0) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   // ── Decentralized Robot Agent FSM ─────────────────────────────────────────
   function stepRobot(robot) {
     if (robot.failed) return;
+
+    // If construction complete, drop carried blocks and evacuate down to ground level
+    if (totalBlocks > 0 && blocksPlaced >= totalBlocks) {
+      robot.carrying = false;
+      if (robot.state === STATES.CARRY_TO_BUILD || robot.state === STATES.INSPECT_AND_PLACE) {
+        robot.state = STATES.SEEK_MATERIAL;
+      }
+    }
 
     // Real-world battery drain & auto-recharge logic
     if (batteryEnabled) {
@@ -688,6 +1017,12 @@ const SimEngine = (function () {
   function stepSeekMaterial(robot) {
     if (isDepot(robot.x, robot.y)) {
       if (batteryEnabled) robot.battery = 100.0;
+      if (blocksPlaced >= totalBlocks) {
+        // Build is complete: rest peacefully at depot on ground level!
+        robot.carrying = false;
+        robot.state = STATES.SEEK_MATERIAL;
+        return;
+      }
       robot.carrying = true;
       robot.tripSteps = 0;
       robot.pathMemory = [];
@@ -696,7 +1031,10 @@ const SimEngine = (function () {
       return;
     }
 
+    const curH = currentHeight[robot.x][robot.y];
+
     // Follow decreasing depRank gradient toward depot (depRank=0)
+    // If currently on top of a structure (curH > 0), STRONGLY prioritize stepping DOWN off the blocks!
     let bestRank = depRank[robot.x][robot.y];
     const candidates = [];
     const shuffled = shuffleDir4();
@@ -704,14 +1042,28 @@ const SimEngine = (function () {
     for (const [dx, dy] of shuffled) {
       const nx = robot.x + dx, ny = robot.y + dy;
       if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
-        if (depRank[nx][ny] < bestRank) {
-          candidates.push({ x: nx, y: ny, rank: depRank[nx][ny] });
+        const nH = currentHeight[nx][ny];
+        // When seeking material or evacuating structure, never climb to a higher tier
+        if (curH > 0 && nH > curH) continue;
+        if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && nH > 0) continue;
+
+        if (curH > 0) {
+          // If on a block: stepping down gives massive positive score (+1000 per level stepped down)
+          if (nH < curH || depRank[nx][ny] <= bestRank) {
+            const score = (curH - nH) * 1000 - depRank[nx][ny];
+            candidates.push({ x: nx, y: ny, score });
+          }
+        } else {
+          // On ground: follow decreasing depRank toward nearest depot
+          if (depRank[nx][ny] < bestRank) {
+            candidates.push({ x: nx, y: ny, score: -depRank[nx][ny] });
+          }
         }
       }
     }
 
     if (candidates.length > 0) {
-      candidates.sort((a, b) => a.rank - b.rank);
+      candidates.sort((a, b) => b.score - a.score);
       let moved = false;
       for (const c of candidates) {
         if (tryMove(robot, c.x, c.y)) {
@@ -720,13 +1072,41 @@ const SimEngine = (function () {
         }
       }
       if (!moved) {
-        const d = shuffled[0];
-        tryMove(robot, robot.x + d[0], robot.y + d[1]);
+        for (const [dx, dy] of shuffled) {
+          const nx = robot.x + dx, ny = robot.y + dy;
+          if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+            if (curH > 0 && currentHeight[nx][ny] > curH) continue;
+            if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && currentHeight[nx][ny] > 0) continue;
+            if (tryMove(robot, nx, ny)) break;
+          }
+        }
       }
     } else {
-      // Random walk step if at flat gradient or temporary blockage
-      const d = shuffled[0];
-      tryMove(robot, robot.x + d[0], robot.y + d[1]);
+      // If flat or blocked gradient, try stepping down to any valid lower neighbor
+      let stepDownDone = false;
+      if (curH > 0) {
+        for (const [dx, dy] of shuffled) {
+          const nx = robot.x + dx, ny = robot.y + dy;
+          if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+            if (currentHeight[nx][ny] < curH) {
+              if (tryMove(robot, nx, ny)) {
+                stepDownDone = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+      if (!stepDownDone) {
+        for (const [dx, dy] of shuffled) {
+          const nx = robot.x + dx, ny = robot.y + dy;
+          if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+            if (curH > 0 && currentHeight[nx][ny] > curH) continue;
+            if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && currentHeight[nx][ny] > 0) continue;
+            if (tryMove(robot, nx, ny)) break;
+          }
+        }
+      }
     }
   }
 
@@ -787,6 +1167,7 @@ const SimEngine = (function () {
     for (let x = 0; x < GRID; x++) {
       for (let y = 0; y < GRID; y++) {
         if (targetHeight[x][y] > currentHeight[x][y] && (!buildPhase || buildPhase[x][y] <= activePhase)) {
+          if (isActiveRelocatedCell(x, y)) continue;
           // Seed all adjacent placement spots where robots can stand to place this block
           for (let d = 0; d < 4; d++) {
             const sx = x + DIR4[d][0];
@@ -837,6 +1218,14 @@ const SimEngine = (function () {
    * Move toward active build zones using ACO stigmergy + active build site attraction.
    */
   function stepCarryToBuild(robot) {
+    // If all blocks placed, drop carried block and immediately evacuate structure down to ground
+    if (blocksPlaced >= totalBlocks) {
+      robot.carrying = false;
+      robot.state = STATES.SEEK_MATERIAL;
+      stepSeekMaterial(robot);
+      return;
+    }
+
     robot.tripSteps++;
 
     // Check if directly adjacent to any valid placement cell
@@ -844,6 +1233,27 @@ const SimEngine = (function () {
     if (validPlacement !== null) {
       robot.state = STATES.INSPECT_AND_PLACE;
       robot.stuckTicks = 0;
+      return;
+    }
+
+    // If no unbuilt cells remain reachable, follow decreasing depRank back to depot
+    let hasUnbuilt = false;
+    if (unbuiltDistGrid) {
+      for (let x = 0; x < GRID && !hasUnbuilt; x++) {
+        for (let y = 0; y < GRID && !hasUnbuilt; y++) {
+          if (unbuiltDistGrid[x][y] < 900) hasUnbuilt = true;
+        }
+      }
+    }
+    if (!hasUnbuilt) {
+      if (isDepot(robot.x, robot.y)) {
+        robot.carrying = false;
+        robot.state = STATES.SEEK_MATERIAL;
+        return;
+      }
+      robot.carrying = false; // Drop block so it can descend freely
+      robot.state = STATES.SEEK_MATERIAL;
+      stepSeekMaterial(robot);
       return;
     }
 
@@ -872,7 +1282,7 @@ const SimEngine = (function () {
       if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny)) {
         // Topological step distance to closest reachable unbuilt cell
         const uDist = unbuiltDistGrid ? unbuiltDistGrid[nx][ny] : 999;
-        const unbuiltBeacon = 45.0 / (uDist + 1.0);
+        const unbuiltBeacon = uDist < 900 ? (45.0 / (uDist + 1.0)) : -50.0;
 
         // Repel from fully completed structures so carrying robots never cluster on finished pillars
         const isCompletedStructure = targetHeight[nx][ny] > 0 && currentHeight[nx][ny] >= targetHeight[nx][ny];
@@ -999,10 +1409,21 @@ const SimEngine = (function () {
    * Resolve deadlocks by taking random orthogonal steps.
    */
   function stepYieldAndBackoff(robot) {
+    const curH = currentHeight[robot.x][robot.y];
     const shuffled = shuffleDir4();
+    // If standing on a structure tier, prioritize stepping down rather than wandering on top of blocks
+    if (curH > 0) {
+      shuffled.sort((a, b) => {
+        const ha = inBounds(robot.x + a[0], robot.y + a[1]) ? currentHeight[robot.x + a[0]][robot.y + a[1]] : 99;
+        const hb = inBounds(robot.x + b[0], robot.y + b[1]) ? currentHeight[robot.x + b[0]][robot.y + b[1]] : 99;
+        return ha - hb;
+      });
+    }
     for (const [dx, dy] of shuffled) {
       const nx = robot.x + dx, ny = robot.y + dy;
       if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny) && robotGrid[nx][ny] === null) {
+        if (currentHeight[nx][ny] > curH) continue; // Never step up while yielding
+        if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && currentHeight[nx][ny] > 0) continue;
         robotGrid[robot.x][robot.y] = null;
         robot.x = nx; robot.y = ny;
         robotGrid[nx][ny] = robot;
@@ -1012,7 +1433,7 @@ const SimEngine = (function () {
 
     robot.backoffSteps = (robot.backoffSteps || 1) - 1;
     if (robot.backoffSteps <= 0) {
-      robot.state = robot.carrying ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
+      robot.state = (robot.carrying && blocksPlaced < totalBlocks) ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
       robot.stuckTicks = 0;
     }
   }
@@ -1481,6 +1902,11 @@ const SimEngine = (function () {
     // Logistics mode
     acoMode = config.acoEnabled !== undefined ? config.acoEnabled : (config.acoMode !== undefined ? config.acoMode : true);
 
+    relocationEnabled = config.relocationEnabled !== undefined ? config.relocationEnabled : true;
+    deadlockThreshold = config.deadlockThreshold || 45;
+    relocatedBlocks = [];
+    relocationLog = [];
+
     ticksSinceLastPlacement = 0;
 
     // Initial Depots: default to outside quadrant depots (4,4), (4,27), (27,4), (27,27)
@@ -1566,6 +1992,7 @@ const SimEngine = (function () {
   function reset() {
     tickCount = 0;
     blocksPlaced = 0;
+    evacuationTicks = 0;
     throughputBuffer = [];
     currentHeight = null;
     targetHeight = null;
@@ -1607,6 +2034,10 @@ const SimEngine = (function () {
 
     const prevPlaced = blocksPlaced;
 
+    if (relocationEnabled) {
+      checkAndRestoreRelocatedBlocks();
+    }
+
     for (const idx of order) {
       const bot = robots[idx];
       if (!bot.failed) {
@@ -1625,8 +2056,19 @@ const SimEngine = (function () {
     throughputBuffer.push(placedThisTick);
     if (throughputBuffer.length > 100) throughputBuffer.shift();
 
+    if (relocationEnabled && ticksSinceLastPlacement >= deadlockThreshold) {
+      attemptDeadlockRecovery();
+    }
+
+    if (totalBlocks > 0 && blocksPlaced >= totalBlocks) {
+      evacuationTicks++;
+    } else {
+      evacuationTicks = 0;
+    }
+
     const activeCount = robots.filter(r => !r.failed).length;
     const failedCount = robots.filter(r => r.failed).length;
+    const onStructureCount = getRobotsOnStructureCount();
 
     return {
       tick: tickCount,
@@ -1634,6 +2076,8 @@ const SimEngine = (function () {
       totalBlocks,
       activeRobots: activeCount,
       failedRobots: failedCount,
+      robotsOnStructure: onStructureCount,
+      evacuating: totalBlocks > 0 && blocksPlaced >= totalBlocks && onStructureCount > 0,
       throughputBuffer: throughputBuffer.slice(),
     };
   }
@@ -1668,10 +2112,15 @@ const SimEngine = (function () {
       tickCount,
       blocksPlaced,
       totalBlocks,
+      robotsOnStructure: getRobotsOnStructureCount(),
+      evacuating: totalBlocks > 0 && blocksPlaced >= totalBlocks && getRobotsOnStructureCount() > 0,
       acoMode,
       heterogeneousRoles,
       batteryEnabled,
       sensorNoise,
+      relocationEnabled,
+      relocatedBlocks: relocatedBlocks.map(r => ({ ...r })),
+      relocationLog: relocationLog.slice(-10),
       movingHazard: {
         enabled: movingHazard.enabled,
         x: movingHazard.x,
@@ -1691,6 +2140,14 @@ const SimEngine = (function () {
     getRegionalProgress,
     getCurrentBuildPhase,
     isPhaseComplete,
+    auditCompletion,
+    attemptDeadlockRecovery,
+    getRelocatedBlocks: function () {
+      return relocatedBlocks.slice();
+    },
+    setRelocationEnabled: function (val) {
+      relocationEnabled = !!val;
+    },
 
     // Preset blueprints
     walledRoom,
@@ -1706,8 +2163,12 @@ const SimEngine = (function () {
     get totalBlocks() {
       return totalBlocks;
     },
+    getRobotsOnStructureCount,
     isComplete: function () {
-      return totalBlocks > 0 && blocksPlaced >= totalBlocks;
+      if (totalBlocks <= 0 || blocksPlaced < totalBlocks) return false;
+      const onStructure = getRobotsOnStructureCount();
+      if (onStructure > 0 && evacuationTicks < 50) return false;
+      return true;
     },
     setACOEnabled: function (val) {
       acoMode = !!val;
