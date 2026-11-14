@@ -24,8 +24,9 @@ const SimEngine = (function () {
     CARRY_TO_BUILD: 1,
     INSPECT_AND_PLACE: 2,
     YIELD_AND_BACKOFF: 3,
+    RECHARGE: 4,
   };
-  const STATE_NAMES = ["SEEK", "CARRY", "INSPECT", "YIELD"];
+  const STATE_NAMES = ["SEEK", "CARRY", "INSPECT", "YIELD", "RECHARGE"];
 
   const DIR4 = [
     [1, 0],
@@ -77,6 +78,24 @@ const SimEngine = (function () {
   let acoMode = true;
   let currentBlueprintName = "walledRoom";
   let unbuiltDistGrid = null;
+
+  // Stretch-goal feature states
+  let heterogeneousRoles = false;
+  let batteryEnabled = false;
+  let sensorNoise = 0.0;
+  let movingHazard = {
+    enabled: false,
+    x: 8,
+    y: 8,
+    size: 2,
+    vx: 1,
+    vy: 0,
+    minX: 4,
+    maxX: 26,
+    minY: 4,
+    maxY: 26,
+    stepCounter: 0,
+  };
 
   const DEFAULT_DEPOTS = [
     { x: 4, y: 4 },
@@ -230,6 +249,86 @@ const SimEngine = (function () {
     return t;
   }
 
+  /**
+   * 4. C-DAC Logo / Typography Preset
+   * Block typography "C - D - A - C" with corner reinforcement pillars.
+   */
+  function cdacLogoBlueprint() {
+    const t = makeGrid(0);
+    function rect(x0, y0, w, h, val) {
+      for (let x = x0; x < x0 + w; x++) {
+        for (let y = y0; y < y0 + h; y++) {
+          if (inBounds(x, y)) t[x][y] = val;
+        }
+      }
+    }
+    // C1: x: 3..7, y: 11..20
+    rect(3, 11, 5, 2, 2);
+    rect(3, 19, 5, 2, 2);
+    rect(3, 11, 2, 10, 2);
+    t[3][11] = 3; t[7][11] = 3; t[3][20] = 3; t[7][20] = 3;
+
+    // D: x: 9..14, y: 11..20
+    rect(9, 11, 2, 10, 2);
+    rect(9, 11, 4, 2, 2);
+    rect(9, 19, 4, 2, 2);
+    rect(13, 13, 2, 6, 2);
+    t[9][11] = 3; t[9][20] = 3;
+
+    // A: x: 16..21, y: 11..20
+    rect(16, 11, 2, 10, 2);
+    rect(20, 11, 2, 10, 2);
+    rect(16, 11, 6, 2, 2);
+    rect(16, 15, 6, 2, 2);
+    t[16][11] = 3; t[21][11] = 3;
+
+    // C2: x: 23..27, y: 11..20
+    rect(23, 11, 5, 2, 2);
+    rect(23, 19, 5, 2, 2);
+    rect(23, 11, 2, 10, 2);
+    t[23][11] = 3; t[27][11] = 3; t[23][20] = 3; t[27][20] = 3;
+
+    return t;
+  }
+
+  /**
+   * 5. PES University Logo Preset
+   * Block typography "P - E - S" with height 2 walls and height 3 crowns.
+   */
+  function pesLogoBlueprint() {
+    const t = makeGrid(0);
+    function rect(x0, y0, w, h, val) {
+      for (let x = x0; x < x0 + w; x++) {
+        for (let y = y0; y < y0 + h; y++) {
+          if (inBounds(x, y)) t[x][y] = val;
+        }
+      }
+    }
+    // P: x: 5..10, y: 10..21
+    rect(5, 10, 2, 12, 2);
+    rect(5, 10, 6, 2, 2);
+    rect(5, 15, 6, 2, 2);
+    rect(9, 10, 2, 6, 2);
+    t[5][10] = 3; t[10][10] = 3; t[5][21] = 3;
+
+    // E: x: 13..18, y: 10..21
+    rect(13, 10, 2, 12, 2);
+    rect(13, 10, 6, 2, 2);
+    rect(13, 15, 5, 2, 2);
+    rect(13, 20, 6, 2, 2);
+    t[13][10] = 3; t[18][10] = 3; t[13][21] = 3; t[18][21] = 3;
+
+    // S: x: 21..26, y: 10..21
+    rect(21, 10, 6, 2, 2);
+    rect(21, 10, 2, 6, 2);
+    rect(21, 15, 6, 2, 2);
+    rect(25, 15, 2, 6, 2);
+    rect(21, 20, 6, 2, 2);
+    t[21][10] = 3; t[26][10] = 3; t[21][21] = 3; t[26][21] = 3;
+
+    return t;
+  }
+
   // ── Dependency Rank Compiler (BFS Wavefront) ──────────────────────────────
   /**
    * Multi-source BFS from material depots outward across the grid.
@@ -304,12 +403,19 @@ const SimEngine = (function () {
   }
 
   // ── TERMES Climbing / Traversal Check ──────────────────────────────────────
+  function isHazardCell(x, y) {
+    if (!movingHazard || !movingHazard.enabled) return false;
+    return x >= movingHazard.x && x < movingHazard.x + movingHazard.size &&
+           y >= movingHazard.y && y < movingHazard.y + movingHazard.size;
+  }
+
   /**
    * Harvard TERMES Rule: robots can step between adjacent cells if step height <= 1.
    */
   function canTraverse(fromX, fromY, toX, toY) {
     if (!inBounds(toX, toY)) return false;
     if (obstacles[toX][toY]) return false;
+    if (isHazardCell(toX, toY)) return false;
     const fromH = currentHeight[fromX][fromY];
     const toH = currentHeight[toX][toY];
     return Math.abs(toH - fromH) <= 1;
@@ -441,6 +547,14 @@ const SimEngine = (function () {
   function stepRobot(robot) {
     if (robot.failed) return;
 
+    // Real-world battery drain & auto-recharge logic
+    if (batteryEnabled) {
+      robot.battery = Math.max(0, (robot.battery !== undefined ? robot.battery : 100.0) - 0.08);
+      if (robot.battery < 20.0 && robot.state !== STATES.RECHARGE) {
+        robot.state = STATES.RECHARGE;
+      }
+    }
+
     switch (robot.state) {
       case STATES.SEEK_MATERIAL:
         stepSeekMaterial(robot);
@@ -454,6 +568,9 @@ const SimEngine = (function () {
       case STATES.YIELD_AND_BACKOFF:
         stepYieldAndBackoff(robot);
         break;
+      case STATES.RECHARGE:
+        stepRecharge(robot);
+        break;
     }
   }
 
@@ -463,6 +580,7 @@ const SimEngine = (function () {
    */
   function stepSeekMaterial(robot) {
     if (isDepot(robot.x, robot.y)) {
+      if (batteryEnabled) robot.battery = 100.0;
       robot.carrying = true;
       robot.tripSteps = 0;
       robot.pathMemory = [];
@@ -478,7 +596,7 @@ const SimEngine = (function () {
 
     for (const [dx, dy] of shuffled) {
       const nx = robot.x + dx, ny = robot.y + dy;
-      if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny)) {
+      if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
         if (depRank[nx][ny] < bestRank) {
           candidates.push({ x: nx, y: ny, rank: depRank[nx][ny] });
         }
@@ -503,6 +621,42 @@ const SimEngine = (function () {
       const d = shuffled[0];
       tryMove(robot, robot.x + d[0], robot.y + d[1]);
     }
+  }
+
+  /**
+   * STATE 5: RECHARGE
+   * Return to nearest depot when battery < 20% and recharge to 100%.
+   */
+  function stepRecharge(robot) {
+    if (isDepot(robot.x, robot.y)) {
+      robot.battery = Math.min(100.0, (robot.battery || 0) + 25.0);
+      if (robot.battery >= 100.0) {
+        robot.state = robot.carrying ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
+      }
+      return;
+    }
+
+    let bestRank = depRank[robot.x][robot.y];
+    const candidates = [];
+    const shuffled = shuffleDir4();
+
+    for (const [dx, dy] of shuffled) {
+      const nx = robot.x + dx, ny = robot.y + dy;
+      if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+        if (depRank[nx][ny] < bestRank) {
+          candidates.push({ x: nx, y: ny, rank: depRank[nx][ny] });
+        }
+      }
+    }
+
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => a.rank - b.rank);
+      for (const c of candidates) {
+        if (tryMove(robot, c.x, c.y)) return;
+      }
+    }
+    const d = shuffled[0];
+    tryMove(robot, robot.x + d[0], robot.y + d[1]);
   }
 
   /**
@@ -618,14 +772,31 @@ const SimEngine = (function () {
 
         let score;
         if (acoMode) {
-          const trail = pheromoneTrail[nx][ny];
-          const buildPhero = pheromoneBuild[nx][ny];
-          if (random() < eps) {
-            // Unbuilt frontier beacon attraction dominates
-            score = (unbuiltBeacon * 3.0) + (random() * 5.0) + stalePenalty;
+          let trail = pheromoneTrail[nx][ny];
+          let buildPhero = pheromoneBuild[nx][ny];
+
+          // Sensor Noise (0% to 20%)
+          if (sensorNoise > 0.001) {
+            const noiseT = 1.0 + (random() - 0.5) * 2.0 * sensorNoise;
+            const noiseB = 1.0 + (random() - 0.5) * 2.0 * sensorNoise;
+            trail = Math.max(0.001, trail * noiseT);
+            buildPhero = Math.max(0.001, buildPhero * noiseB);
+          }
+
+          if (heterogeneousRoles && robot.role === "carrier") {
+            // Heavy Carriers follow ACO logistics highways strongly
+            score = (trail * 4.2) + (buildPhero * 2.0) + unbuiltBeacon + (random() * 2.0) + stalePenalty;
+          } else if (heterogeneousRoles && robot.role === "builder") {
+            // Agile Builders prioritize active frontier blocks
+            score = (trail * 1.5) + (buildPhero * 5.0) + (unbuiltBeacon * 2.0) + (random() * 1.5) + stalePenalty;
           } else {
-            // ACO Stigmergy: trail + active build pheromone + unbuilt beacon
-            score = (trail * 2.0) + (buildPhero * 3.5) + unbuiltBeacon + (random() * 2.0) + stalePenalty;
+            if (random() < eps) {
+              // Unbuilt frontier beacon attraction dominates
+              score = (unbuiltBeacon * 3.0) + (random() * 5.0) + stalePenalty;
+            } else {
+              // ACO Stigmergy: trail + active build pheromone + unbuilt beacon
+              score = (trail * 2.0) + (buildPhero * 3.5) + unbuiltBeacon + (random() * 2.0) + stalePenalty;
+            }
           }
         } else {
           // Naive Baseline: unbuilt beacon + random walk without pheromones
@@ -694,7 +865,8 @@ const SimEngine = (function () {
 
       // 2. Deposit ACO Path Pheromone along path memory: inversely proportional to trip length
       const tripLen = Math.max(robot.tripSteps, 1);
-      const trailStrength = Math.min(15.0, 75.0 / tripLen);
+      const mult = (heterogeneousRoles && robot.role === "carrier") ? 1.5 : 1.0;
+      const trailStrength = Math.min(18.0, (75.0 * mult) / tripLen);
       for (const p of robot.pathMemory) {
         if (inBounds(p.x, p.y)) {
           pheromoneTrail[p.x][p.y] += trailStrength;
@@ -735,6 +907,178 @@ const SimEngine = (function () {
       robot.state = robot.carrying ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
       robot.stuckTicks = 0;
     }
+  }
+
+  // ── Moving Hazard Simulation ──────────────────────────────────────────────
+  function stepMovingHazard() {
+    if (!movingHazard || !movingHazard.enabled) return;
+    movingHazard.stepCounter = (movingHazard.stepCounter || 0) + 1;
+    // Step every 2 ticks
+    if (movingHazard.stepCounter % 2 === 0) {
+      movingHazard.x += movingHazard.vx;
+      if (movingHazard.x >= movingHazard.maxX) {
+        movingHazard.x = movingHazard.maxX;
+        movingHazard.vx = -1;
+      } else if (movingHazard.x <= movingHazard.minX) {
+        movingHazard.x = movingHazard.minX;
+        movingHazard.vx = 1;
+      }
+
+      movingHazard.y += movingHazard.vy;
+      if (movingHazard.y >= movingHazard.maxY) {
+        movingHazard.y = movingHazard.maxY;
+        movingHazard.vy = -1;
+      } else if (movingHazard.y <= movingHazard.minY) {
+        movingHazard.y = movingHazard.minY;
+        movingHazard.vy = 1;
+      }
+    }
+  }
+
+  // ── Disaster Breach & Self-Healing ────────────────────────────────────────
+  /**
+   * Destroys already-placed blocks within a (2*radius+1)^2 zone.
+   * Decrements blocksPlaced and deposits distress pheromone so the swarm
+   * autonomously senses the height difference and self-heals back to 100%.
+   */
+  function breachStructure(cx, cy, radius) {
+    radius = radius !== undefined ? radius : 2;
+    cx = Math.round(cx);
+    cy = Math.round(cy);
+    let breachedBlocks = 0;
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dy = -radius; dy <= radius; dy++) {
+        const x = cx + dx, y = cy + dy;
+        if (inBounds(x, y) && currentHeight[x][y] > 0) {
+          breachedBlocks += currentHeight[x][y];
+          blocksPlaced -= currentHeight[x][y];
+          currentHeight[x][y] = 0;
+          pheromoneBuild[x][y] = 25.0; // High build urge trigger
+          pheromoneTrail[x][y] = Math.max(pheromoneTrail[x][y], 15.0);
+        }
+      }
+    }
+    blocksPlaced = Math.max(0, blocksPlaced);
+    ticksSinceLastPlacement = 0;
+    return { cx, cy, radius, breachedBlocks };
+  }
+
+  // ── Decentralization Proof: 3x3 Local Vision Brain X-Ray ──────────────────
+  /**
+   * Returns only what the robot can perceive within its immediate 3x3 radius (r = 1).
+   * Everything outside is Fog of War, proving strictly decentralized sensing.
+   */
+  function getRobotBrain(botId) {
+    const robot = robots.find(r => r.id === botId);
+    if (!robot) return null;
+
+    const localVision = [];
+    for (let dy = -1; dy <= 1; dy++) {
+      const row = [];
+      for (let dx = -1; dx <= 1; dx++) {
+        const lx = robot.x + dx;
+        const ly = robot.y + dy;
+        if (inBounds(lx, ly)) {
+          const occBot = robotGrid[lx][ly];
+          row.push({
+            dx, dy,
+            x: lx, y: ly,
+            inBounds: true,
+            currentHeight: currentHeight[lx][ly],
+            targetHeight: targetHeight[lx][ly],
+            obstacle: obstacles[lx][ly] === 1,
+            isHazard: isHazardCell(lx, ly),
+            isDepot: isDepot(lx, ly),
+            hasRobot: occBot !== null,
+            robotId: occBot ? occBot.id : null,
+            pheromoneTrail: Number(pheromoneTrail[lx][ly].toFixed(2)),
+            pheromoneBuild: Number(pheromoneBuild[lx][ly].toFixed(2)),
+            depRank: depRank[lx][ly] === Infinity ? -1 : depRank[lx][ly],
+            canTraverse: canTraverse(robot.x, robot.y, lx, ly),
+          });
+        } else {
+          row.push({
+            dx, dy,
+            x: lx, y: ly,
+            inBounds: false,
+            currentHeight: 0,
+            targetHeight: 0,
+            obstacle: true,
+            isHazard: false,
+            isDepot: false,
+            hasRobot: false,
+            robotId: null,
+            pheromoneTrail: 0,
+            pheromoneBuild: 0,
+            depRank: -1,
+            canTraverse: false,
+          });
+        }
+      }
+      localVision.push(row);
+    }
+
+    const cardinalDirs = [
+      { name: "North", dir: "N", dx: 0, dy: -1 },
+      { name: "South", dir: "S", dx: 0, dy: 1 },
+      { name: "East", dir: "E", dx: 1, dy: 0 },
+      { name: "West", dir: "W", dx: -1, dy: 0 },
+    ];
+    const evaluations = cardinalDirs.map(d => {
+      const tx = robot.x + d.dx, ty = robot.y + d.dy;
+      if (!inBounds(tx, ty)) {
+        return { ...d, x: tx, y: ty, score: -1, valid: false, reason: "Out of Bounds" };
+      }
+      if (obstacles[tx][ty]) {
+        return { ...d, x: tx, y: ty, score: -1, valid: false, reason: "Obstacle" };
+      }
+      if (isHazardCell(tx, ty)) {
+        return { ...d, x: tx, y: ty, score: -1, valid: false, reason: "Hazard Zone" };
+      }
+      if (robotGrid[tx][ty] !== null) {
+        return { ...d, x: tx, y: ty, score: 0, valid: false, reason: "Occupied by Bot #" + robotGrid[tx][ty].id };
+      }
+      const canClimb = canTraverse(robot.x, robot.y, tx, ty);
+      if (!canClimb) {
+        return { ...d, x: tx, y: ty, score: -1, valid: false, reason: "Step > 1 (TERMES)" };
+      }
+
+      let score = 0;
+      let reason = "Feasible";
+      if (robot.carrying) {
+        const trail = pheromoneTrail[tx][ty];
+        const buildPhero = pheromoneBuild[tx][ty];
+        const unbuiltDist = unbuiltDistGrid ? unbuiltDistGrid[tx][ty] : 999;
+        const unbuiltBeacon = unbuiltDist < 999 ? Math.max(0, 30.0 - unbuiltDist * 1.5) : 0;
+        score = Number(((trail * 2.5) + (buildPhero * 3.0) + unbuiltBeacon).toFixed(1));
+        reason = `Trail: ${trail.toFixed(1)}, Beacon: ${unbuiltBeacon.toFixed(1)}`;
+      } else {
+        const curRank = depRank[robot.x][robot.y];
+        const nextRank = depRank[tx][ty];
+        const deltaRank = curRank - nextRank;
+        score = Number((Math.max(0, deltaRank * 10) + pheromoneTrail[tx][ty]).toFixed(1));
+        reason = `Rank: ${curRank} → ${nextRank} (${nextRank < curRank ? "Toward Depot" : "Away"})`;
+      }
+      return { ...d, x: tx, y: ty, score, valid: true, reason };
+    });
+
+    return {
+      robot: {
+        id: robot.id,
+        x: robot.x,
+        y: robot.y,
+        state: robot.state,
+        stateName: STATE_NAMES[robot.state],
+        role: robot.role || "builder",
+        carrying: robot.carrying,
+        battery: robot.battery !== undefined ? Number(robot.battery.toFixed(1)) : 100.0,
+        tripSteps: robot.tripSteps,
+        stuckTicks: robot.stuckTicks,
+        failed: robot.failed,
+      },
+      localVision,
+      evaluations,
+    };
   }
 
   // ── Particle Swarm Optimization (PSO) Depot Placement ────────────────────
@@ -985,10 +1329,16 @@ const SimEngine = (function () {
     // Set blueprint preset
     const bpName = config.blueprint || "walledRoom";
     currentBlueprintName = bpName;
-    if (bpName === "steppedPyramid") {
+    if (config.customHeightmap) {
+      targetHeight = config.customHeightmap;
+    } else if (bpName === "steppedPyramid") {
       targetHeight = steppedPyramid();
     } else if (bpName === "cdacComplex") {
       targetHeight = cdacComplex();
+    } else if (bpName === "cdacLogo") {
+      targetHeight = cdacLogoBlueprint();
+    } else if (bpName === "pesLogo") {
+      targetHeight = pesLogoBlueprint();
     } else {
       targetHeight = walledRoom();
     }
@@ -1034,10 +1384,13 @@ const SimEngine = (function () {
             const rx = (depot.x | 0) + dx;
             const ry = (depot.y | 0) + dy;
             if (inBounds(rx, ry) && !obstacles[rx][ry] && targetHeight[rx][ry] === 0 && robotGrid[rx][ry] === null) {
+              const role = heterogeneousRoles ? ((i % 5 < 2) ? "carrier" : "builder") : "builder";
               const bot = {
                 id: i,
                 x: rx,
                 y: ry,
+                role: role,
+                battery: 100.0,
                 state: STATES.SEEK_MATERIAL,
                 carrying: false,
                 failed: false,
@@ -1057,10 +1410,13 @@ const SimEngine = (function () {
         for (let x = 0; x < GRID && !placed; x++) {
           for (let y = 0; y < GRID && !placed; y++) {
             if (!obstacles[x][y] && targetHeight[x][y] === 0 && robotGrid[x][y] === null) {
+              const role = heterogeneousRoles ? ((i % 5 < 2) ? "carrier" : "builder") : "builder";
               const bot = {
                 id: i,
                 x,
                 y,
+                role: role,
+                battery: 100.0,
                 state: STATES.SEEK_MATERIAL,
                 carrying: false,
                 failed: false,
@@ -1100,6 +1456,7 @@ const SimEngine = (function () {
 
   function tick() {
     tickCount++;
+    stepMovingHazard();
 
     // 1. Evaporate pheromones
     for (let x = 0; x < GRID; x++) {
@@ -1169,6 +1526,8 @@ const SimEngine = (function () {
         id: r.id,
         x: r.x,
         y: r.y,
+        role: r.role || "builder",
+        battery: r.battery !== undefined ? Math.round(r.battery) : 100,
         state: r.state,
         stateName: STATE_NAMES[r.state],
         carrying: r.carrying,
@@ -1178,6 +1537,15 @@ const SimEngine = (function () {
       blocksPlaced,
       totalBlocks,
       acoMode,
+      heterogeneousRoles,
+      batteryEnabled,
+      sensorNoise,
+      movingHazard: {
+        enabled: movingHazard.enabled,
+        x: movingHazard.x,
+        y: movingHazard.y,
+        size: movingHazard.size,
+      },
     };
   }
 
@@ -1193,6 +1561,8 @@ const SimEngine = (function () {
     walledRoom,
     steppedPyramid,
     cdacComplex,
+    cdacLogoBlueprint,
+    pesLogoBlueprint,
 
     // Runtime queries & setters
     getTotalBlocks: function () {
@@ -1217,6 +1587,8 @@ const SimEngine = (function () {
       currentBlueprintName = name;
       if (name === "steppedPyramid") targetHeight = steppedPyramid();
       else if (name === "cdacComplex") targetHeight = cdacComplex();
+      else if (name === "cdacLogo") targetHeight = cdacLogoBlueprint();
+      else if (name === "pesLogo") targetHeight = pesLogoBlueprint();
       else targetHeight = walledRoom();
 
       totalBlocks = 0;
@@ -1225,6 +1597,52 @@ const SimEngine = (function () {
       }
       depRank = compileDependencyRank(targetHeight, depots, obstacles);
     },
+    setCustomBlueprint: function (grid, name) {
+      currentBlueprintName = name || "customBlueprint";
+      targetHeight = makeGrid(0);
+      totalBlocks = 0;
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          const h = Math.min(3, Math.max(0, Math.round(grid && grid[x] ? (grid[x][y] || 0) : 0)));
+          targetHeight[x][y] = h;
+          totalBlocks += h;
+        }
+      }
+      depRank = compileDependencyRank(targetHeight, depots, obstacles);
+    },
+    setHeterogeneousRoles: function (val) {
+      heterogeneousRoles = !!val;
+      for (let i = 0; i < robots.length; i++) {
+        robots[i].role = heterogeneousRoles ? ((i % 5 < 2) ? "carrier" : "builder") : "builder";
+      }
+    },
+    getHeterogeneousRoles: function () {
+      return heterogeneousRoles;
+    },
+    setBatteryEnabled: function (val) {
+      batteryEnabled = !!val;
+    },
+    getBatteryEnabled: function () {
+      return batteryEnabled;
+    },
+    setSensorNoise: function (val) {
+      sensorNoise = Math.max(0.0, Math.min(0.5, parseFloat(val) || 0.0));
+    },
+    getSensorNoise: function () {
+      return sensorNoise;
+    },
+    setMovingHazard: function (val) {
+      if (typeof val === "boolean") {
+        movingHazard.enabled = val;
+      } else if (typeof val === "object" && val !== null) {
+        Object.assign(movingHazard, val);
+      }
+    },
+    getMovingHazard: function () {
+      return { ...movingHazard };
+    },
+    breachStructure,
+    getRobotBrain,
     setNumRobots: function (n) {
       init({ blueprint: currentBlueprintName, numRobots: n, acoEnabled: acoMode });
     },
