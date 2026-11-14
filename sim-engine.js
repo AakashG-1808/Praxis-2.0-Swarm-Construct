@@ -1279,6 +1279,11 @@ const SimEngine = (function () {
       for (let i = 0; i < 4; i++) {
         const nx = cx + D[i][0], ny = cy + D[i][1];
         if (nx >= 0 && nx < w && ny >= 0 && ny < h && !obstacles[nx][ny] && currentHeight[nx][ny] === 0) {
+          const occ = robotGrid[nx][ny];
+          if (occ !== null && !(nx === gx && ny === gy)) {
+            const oDist = Math.abs(occ.x - (occ.initialX !== undefined ? occ.initialX : occ.x)) + Math.abs(occ.y - (occ.initialY !== undefined ? occ.initialY : occ.y));
+            if (oDist === 0) continue;
+          }
           const idx = nx + ny * w;
           if (!visited[idx]) {
             visited[idx] = 1;
@@ -2501,10 +2506,17 @@ const SimEngine = (function () {
     getRobotsOnStructureCount,
     isComplete: function () {
       if (totalBlocks <= 0 || blocksPlaced < totalBlocks) return false;
-      const onStructure = getRobotsOnStructureCount();
-      if (onStructure > 0 && evacuationTicks < 150) return false;
 
+      // 1. Robots MUST NOT remain on the structure
+      const onStructure = getRobotsOnStructureCount();
+      if (onStructure > 0) {
+        if (evacuationTicks < 600) return false;
+      }
+
+      // 2. All robots MUST return to their initial spawn positions
       const activeRobots = robots ? robots.filter(r => !r.failed) : [];
+      if (activeRobots.length === 0) return true;
+
       let allHome = true;
       for (const r of activeRobots) {
         const curH = (currentHeight && inBounds(r.x, r.y)) ? currentHeight[r.x][r.y] : 0;
@@ -2514,12 +2526,23 @@ const SimEngine = (function () {
         }
         const hx = r.initialX !== undefined ? r.initialX : r.x;
         const hy = r.initialY !== undefined ? r.initialY : r.y;
-        if (Math.abs(r.x - hx) + Math.abs(r.y - hy) > 1) {
+        const dist = Math.abs(r.x - hx) + Math.abs(r.y - hy);
+        if (dist > 1) {
+          // If the exact initial spot is occupied by a parked teammate, allow adjacent parking (radius <= 2)
+          const occ = inBounds(hx, hy) ? robotGrid[hx][hy] : null;
+          if (occ !== null && occ.id !== r.id && dist <= 2) {
+            continue;
+          }
           allHome = false;
           break;
         }
       }
-      if (!allHome && evacuationTicks < 250) return false;
+
+      // Do NOT end until all robots have reached their initial positions
+      if (!allHome) {
+        if (evacuationTicks < 800) return false;
+      }
+
       return true;
     },
     setACOEnabled: function (val) {

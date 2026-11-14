@@ -6,7 +6,7 @@
   <title>Swarm Construct — Autonomous Building Intelligence | C-DAC Praxis 2.0</title>
   <!-- Chart.js CDN with fallback handling -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="sim-engine.js"></script>
+  <script src="sim-engine.js?v=3.2"></script>
   <style>
     /* ── BASE & ECOVACS HOME OBSIDIAN THEME ───────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -2467,10 +2467,10 @@
         progEl.style.color = "#38bdf8";
       } else if (placed >= total && total > 0) {
         if (state.robotsAtHome !== undefined && state.robotsAtHome < activeCount) {
-          progEl.textContent = `${placed} / ${total} (${pct}%) 🏠 Returning Home (${state.robotsAtHome}/${activeCount} at base)`;
+          progEl.textContent = `${placed} / ${total} (${pct}%) 🏠 Returning to Initial Positions (${state.robotsAtHome}/${activeCount} at base)`;
           progEl.style.color = "#38bdf8";
         } else {
-          progEl.textContent = `${placed} / ${total} (${pct}%) ✨ 100% Cleared (All Bots Home)`;
+          progEl.textContent = `${placed} / ${total} (${pct}%) ✨ 100% Cleared (All Bots Returned Home)`;
           progEl.style.color = "#10b981";
         }
       } else {
