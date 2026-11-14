@@ -894,12 +894,6 @@
         <button class="btn-action primary" style="flex: 1; min-width: 150px; padding: 6px;" onclick="loadLogoPreset('apartmentPlan')">
           🏡 Load Sample Floor-Plan
         </button>
-        <button class="btn-action" style="flex: 1; min-width: 140px; padding: 6px;" onclick="loadLogoPreset('cdacLogo')">
-          🏛️ Load "C-DAC" Logo
-        </button>
-        <button class="btn-action" style="flex: 1; min-width: 140px; padding: 6px;" onclick="loadLogoPreset('pesLogo')">
-          🎓 Load "PES" Logo
-        </button>
       </div>
 
       <!-- Side-by-side View: Source Image vs Converted Grid -->
@@ -1094,9 +1088,7 @@
                 <option value="walledRoom" selected>1: Walled Room</option>
                 <option value="steppedPyramid">2: Stepped Pyramid</option>
                 <option value="cdacComplex">3: Twin Bunker</option>
-                <option value="cdacLogo">4: C-DAC Logo</option>
-                <option value="pesLogo">5: PES Logo</option>
-                <option value="custom" id="top-opt-custom" style="display:none;">6: Custom Logo</option>
+                <option value="custom" id="top-opt-custom" style="display:none;">4: Custom Floor Plan</option>
               </select>
             </div>
 
@@ -1124,12 +1116,21 @@
             <button class="top-action-btn" onclick="resetSim()" title="Recompile BFS wavefront and reset swarm">
               🔄 Reset
             </button>
-            <button class="top-action-btn" onclick="openCustomBlueprintModal()" title="Import Logo / Image Blueprint" style="border-color: rgba(245, 158, 11, 0.4); color: #f59e0b;">
-              🎨 Logo Importer
+            <button class="top-action-btn" onclick="openCustomBlueprintModal()" title="Import Architectural Floor-Plan / Custom Blueprint" style="border-color: rgba(0, 242, 254, 0.4); color: #00f2fe;">
+              📐 Floor Plan Importer
             </button>
           </div>
 
           <div class="map-bar-right">
+            <!-- Speed Quick Toggle (1× - 10×) -->
+            <div class="pill-group" style="padding: 2px 5px; gap: 3px; align-items: center;" title="Simulation Speed (1× - 10×)">
+              <span class="bar-lbl" style="color:#00f2fe; font-weight:700;">⚡ Speed:</span>
+              <button class="ctrl-pill" onclick="setSimSpeed(1)" id="top-spd-1" style="padding: 2px 6px;">1×</button>
+              <button class="ctrl-pill active" onclick="setSimSpeed(2)" id="top-spd-2" style="padding: 2px 6px;">2×</button>
+              <button class="ctrl-pill" onclick="setSimSpeed(5)" id="top-spd-5" style="padding: 2px 6px;">5×</button>
+              <button class="ctrl-pill" onclick="setSimSpeed(10)" id="top-spd-10" style="padding: 2px 6px;">10×</button>
+            </div>
+
             <div class="pill-group">
               <button class="ctrl-pill active" id="btn-view-2d" onclick="setViewMode('2d')">2D Plan</button>
               <button class="ctrl-pill" id="btn-view-3d" onclick="setViewMode('3d')">3D Iso</button>
@@ -1203,9 +1204,7 @@
               <option value="walledRoom" selected>Blueprint 1: Walled Room w/ Doorway (Constraint)</option>
               <option value="steppedPyramid">Blueprint 2: Stepped Pyramid (3-Tier Simple)</option>
               <option value="cdacComplex">Blueprint 3: Twin Bunker Complex</option>
-              <option value="cdacLogo">Blueprint 4: C-DAC Logo Typography</option>
-              <option value="pesLogo">Blueprint 5: PES University Logo</option>
-              <option value="custom" id="side-opt-custom" style="display:none;">Blueprint 6: Custom Logo</option>
+              <option value="custom" id="side-opt-custom" style="display:none;">Blueprint 4: Custom Architectural Floor Plan</option>
             </select>
           </div>
 
@@ -1374,9 +1373,16 @@
       <button class="dock-tool primary-pulse" id="btn-play" onclick="togglePlay()">▶️ Start</button>
       <button class="dock-tool" onclick="stepOnce()">⏭ Step</button>
 
-      <div id="speed-ctrl">
-        <input type="range" id="rng-speed" min="1" max="10" value="2" oninput="onSpeedChange(this.value)">
-        <span id="speed-val">2×</span>
+      <div id="speed-ctrl" style="display:flex; align-items:center; gap:5px;">
+        <span class="dock-group-title" style="margin-right:0;">SPEED</span>
+        <div class="pill-group" style="padding:2px; gap:2px;">
+          <button class="ctrl-pill" onclick="setSimSpeed(1)" id="dock-spd-1" style="padding:2px 5px; font-size:10px;">1×</button>
+          <button class="ctrl-pill active" onclick="setSimSpeed(2)" id="dock-spd-2" style="padding:2px 5px; font-size:10px;">2×</button>
+          <button class="ctrl-pill" onclick="setSimSpeed(5)" id="dock-spd-5" style="padding:2px 5px; font-size:10px;">5×</button>
+          <button class="ctrl-pill" onclick="setSimSpeed(10)" id="dock-spd-10" style="padding:2px 5px; font-size:10px;">10×</button>
+        </div>
+        <input type="range" id="rng-speed" min="1" max="10" value="2" oninput="setSimSpeed(this.value)" onchange="setSimSpeed(this.value)" style="width:70px; accent-color:#00f2fe; cursor:pointer;">
+        <span id="speed-val" style="font-size:11px; color:#00f2fe; font-family:monospace; font-weight:700; min-width:22px;">2×</span>
       </div>
 
       <div class="dock-sep"></div>
@@ -1437,6 +1443,12 @@
     // ── Bootstrapping ───────────────────────────────────────────────────────
     window.addEventListener("DOMContentLoaded", () => {
       initCharts();
+      setSimSpeed(2);
+      const rngSpeed = document.getElementById("rng-speed");
+      if (rngSpeed) {
+        rngSpeed.addEventListener("input", e => setSimSpeed(e.target.value));
+        rngSpeed.addEventListener("change", e => setSimSpeed(e.target.value));
+      }
       resetSim();
       initCanvasInteraction();
       requestAnimationFrame(mainRenderLoop);
@@ -1555,9 +1567,26 @@
       updateBrainXRayUI();
     }
 
+    function setSimSpeed(val) {
+      simSpeed = Math.max(1, Math.min(10, parseInt(val) || 1));
+
+      const rng = document.getElementById("rng-speed");
+      if (rng && rng.value !== String(simSpeed)) rng.value = simSpeed;
+
+      const lbl = document.getElementById("speed-val");
+      if (lbl) lbl.textContent = simSpeed + "×";
+
+      // Sync active state across preset buttons
+      [1, 2, 5, 10].forEach(s => {
+        const dBtn = document.getElementById(`dock-spd-${s}`);
+        if (dBtn) dBtn.classList.toggle("active", s === simSpeed);
+        const tBtn = document.getElementById(`top-spd-${s}`);
+        if (tBtn) tBtn.classList.toggle("active", s === simSpeed);
+      });
+    }
+
     function onSpeedChange(val) {
-      simSpeed = parseInt(val) || 1;
-      document.getElementById("speed-val").textContent = simSpeed + "×";
+      setSimSpeed(val);
     }
 
     function onAgentsSlider(val) {
@@ -1908,18 +1937,12 @@
     }
 
     function loadLogoPreset(name) {
-      lastPresetName = name;
+      lastPresetName = name || "apartmentPlan";
       lastUploadedImg = null;
       doorOpenings = [];
       const res = importerMaxRes || 48;
-      if (name === "apartmentPlan") {
-        const targetH = autoFitAspect ? Math.round(res * 0.75) : res;
-        customBlueprintGrid = sampleFloorPlanBlueprint(res, targetH);
-      } else if (name === "pesLogo") {
-        customBlueprintGrid = SimEngine.pesLogoBlueprint(res, res);
-      } else {
-        customBlueprintGrid = SimEngine.cdacLogoBlueprint(res, res);
-      }
+      const targetH = autoFitAspect ? Math.round(res * 0.75) : res;
+      customBlueprintGrid = sampleFloorPlanBlueprint(res, targetH);
       updateImporterView();
     }
 

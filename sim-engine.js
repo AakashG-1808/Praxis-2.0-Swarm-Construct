@@ -857,7 +857,7 @@ const SimEngine = (function () {
     if (toH > fromH) {
       // During return home / evacuation, if trapped inside an enclosed hole, allow stepping onto wall (<= 2) to escape
       if ((totalBlocks > 0 && blocksPlaced >= totalBlocks) && (toH - fromH) <= 2) return true;
-      return (toH - fromH) <= 1;
+      return (toH - fromH) <= 2;
     }
     // Moving on same tier: always valid
     if (toH === fromH) return true;
@@ -917,10 +917,44 @@ const SimEngine = (function () {
         }
       }
 
+      // Multi-tier smooth terraced wavefront for stepped pyramid:
+      // Prevents premature perimeter walls from creating deep pits around central tiers
+      if (currentBlueprintName === "steppedPyramid") {
+        let createsPit = false;
+        for (const [ddx, ddy] of DIR4) {
+          const nx = bx + ddx, ny = by + ddy;
+          if (inBounds(nx, ny) && targetHeight[nx][ny] >= targetHeight[bx][by]) {
+            if (currentHeight[nx][ny] < currentHeight[bx][by]) {
+              createsPit = true;
+              break;
+            }
+          }
+        }
+        if (createsPit) continue;
+      }
+
       if (currentHeight[bx][by] >= targetHeight[bx][by]) continue;
       if (isActiveRelocatedCell(bx, by)) continue;
       if (obstacles[bx][by]) continue;
-      if (robotGrid[bx][by] !== null) continue; // Cell must not be occupied by robot
+      if (robotGrid[bx][by] !== null) {
+        const occ = robotGrid[bx][by];
+        if (!occ.carrying && !occ.failed) {
+          // Nudge empty robot loitering on active build site to yield and step aside
+          occ.state = STATES.YIELD_AND_BACKOFF;
+          occ.backoffSteps = 3;
+          const shuf = shuffleDir4();
+          for (const [ddx, ddy] of shuf) {
+            const ox = occ.x + ddx, oy = occ.y + ddy;
+            if (inBounds(ox, oy) && !obstacles[ox][oy] && canTraverse(occ.x, occ.y, ox, oy) && robotGrid[ox][oy] === null) {
+              robotGrid[occ.x][occ.y] = null;
+              occ.x = ox; occ.y = oy;
+              robotGrid[ox][oy] = occ;
+              break;
+            }
+          }
+        }
+        if (robotGrid[bx][by] !== null) continue; // Cell must not be occupied by robot
+      }
 
       // Anti-robot-trapping check: never place a block that blocks the last descent route of an adjacent robot on a higher tier
       let trapsRobot = false;
@@ -948,8 +982,8 @@ const SimEngine = (function () {
       }
       if (trapsRobot) continue;
 
-      if (!relaxAntiTrap) {
-        // Inside-Out Anti-Trap Check
+      if (!relaxAntiTrap && currentBlueprintName === "walledRoom") {
+        // Inside-Out Anti-Trap Check for Walled Room
         let trapped = false;
         for (const [ddx, ddy] of DIR4) {
           const nx = bx + ddx, ny = by + ddy;
@@ -1148,7 +1182,7 @@ const SimEngine = (function () {
       if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
         const nH = currentHeight[nx][ny];
         // When seeking material or evacuating structure, never climb to a higher tier
-        if (curH > 0 && nH > curH) continue;
+        if (nH - curH > 1) continue;
         if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && nH > 0) continue;
 
         if (curH > 0) {
@@ -1179,7 +1213,7 @@ const SimEngine = (function () {
         for (const [dx, dy] of shuffled) {
           const nx = robot.x + dx, ny = robot.y + dy;
           if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
-            if (curH > 0 && currentHeight[nx][ny] > curH) continue;
+            if (currentHeight[nx][ny] - curH > 1) continue;
             if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && currentHeight[nx][ny] > 0) continue;
             if (tryMove(robot, nx, ny)) break;
           }
@@ -1205,7 +1239,7 @@ const SimEngine = (function () {
         for (const [dx, dy] of shuffled) {
           const nx = robot.x + dx, ny = robot.y + dy;
           if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
-            if (curH > 0 && currentHeight[nx][ny] > curH) continue;
+            if (currentHeight[nx][ny] - curH > 1) continue;
             if (totalBlocks > 0 && blocksPlaced >= totalBlocks && curH === 0 && currentHeight[nx][ny] > 0) continue;
             if (tryMove(robot, nx, ny)) break;
           }
@@ -1560,8 +1594,9 @@ const SimEngine = (function () {
         const uDist = unbuiltDistGrid ? unbuiltDistGrid[nx][ny] : 999;
         const unbuiltBeacon = uDist < 900 ? (45.0 / (uDist + 1.0)) : -50.0;
 
-        // Repel from fully completed structures so carrying robots never cluster on finished pillars
-        const isCompletedStructure = targetHeight[nx][ny] > 0 && currentHeight[nx][ny] >= targetHeight[nx][ny];
+        // Repel from completed structures ONLY when they do not lead closer to an unbuilt frontier
+        const curUDist = unbuiltDistGrid ? unbuiltDistGrid[robot.x][robot.y] : 999;
+        const isCompletedStructure = targetHeight[nx][ny] > 0 && currentHeight[nx][ny] >= targetHeight[nx][ny] && uDist >= curUDist;
         const stalePenalty = isCompletedStructure ? -20.0 : 0.0;
 
         let score;
