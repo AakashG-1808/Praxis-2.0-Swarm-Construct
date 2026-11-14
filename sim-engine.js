@@ -1426,7 +1426,7 @@ const SimEngine = (function () {
     }
 
     // Validate parameters
-    const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex"];
+    const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex", "cdacLogo", "pesLogo", "custom"];
     const bpName = config.blueprint || "walledRoom";
     if (!validBlueprints.includes(bpName)) {
       throw new Error(`Invalid blueprint preset '${bpName}'. Valid presets are: ${validBlueprints.join(", ")}`);
@@ -1719,7 +1719,7 @@ const SimEngine = (function () {
       acoMode = !!val;
     },
     setBlueprint: function (name) {
-      const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex"];
+      const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex", "cdacLogo", "pesLogo", "custom"];
       if (!validBlueprints.includes(name)) {
         throw new Error(`Invalid blueprint preset '${name}'. Valid presets are: ${validBlueprints.join(", ")}`);
       }

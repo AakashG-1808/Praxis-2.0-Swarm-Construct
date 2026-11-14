@@ -1222,6 +1222,10 @@
       const topAg = document.getElementById("top-sel-agents");
       if (topAg && topAg.value !== String(agents)) topAg.value = String(agents);
 
+      if (bp !== "custom") {
+        customBlueprintGrid = null;
+      }
+
       SimEngine.init({
         blueprint: (bp === "custom" && customBlueprintGrid) ? "custom" : bp,
         customHeightmap: bp === "custom" ? customBlueprintGrid : null,
