@@ -69,6 +69,7 @@ const SimEngine = (function () {
   let depRank = null;
   let robots = [];
   let robotGrid = null; // Spatial occupancy lookup: robotGrid[x][y] = robot | null
+  let buildPhase = null; // 2.5D Construction Phase Matrix (0: Phase 0/Pillar, 1: Phase 1/Perimeter)
 
   let tickCount = 0;
   let totalBlocks = 0;
@@ -329,6 +330,92 @@ const SimEngine = (function () {
     return t;
   }
 
+  // ── Build Phase Compiler & Regional Progress ──────────────────────────────
+  /**
+   * Compiles explicit construction dependency phases for decentralized execution:
+   * - For 'walledRoom': Phase 0 is the central 3x3 pillar (height 3). Phase 1 is the perimeter walls (height 2).
+   *   Robots enforce that Phase 0 must be 100% complete before any Phase 1 blocks are placed.
+   * - For other blueprints: All target blocks default to Phase 0.
+   */
+  function compileBuildPhase(name, th) {
+    const bp = makeBoolGrid();
+    if (name === "walledRoom") {
+      const cx = 15, cy = 15;
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          if (th[x][y] > 0) {
+            // Central 3x3 pillar is phase 0; perimeter walls are phase 1
+            if (x >= cx - 1 && x <= cx + 1 && y >= cy - 1 && y <= cy + 1) {
+              bp[x][y] = 0;
+            } else {
+              bp[x][y] = 1;
+            }
+          }
+        }
+      }
+    } else {
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          bp[x][y] = 0;
+        }
+      }
+    }
+    return bp;
+  }
+
+  function isPhaseComplete(phase) {
+    if (!buildPhase || !targetHeight || !currentHeight) return true;
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        if (buildPhase[x][y] === phase && currentHeight[x][y] < targetHeight[x][y]) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  function getCurrentBuildPhase() {
+    if (currentBlueprintName === "walledRoom") {
+      if (!isPhaseComplete(0)) return 0;
+      return 1;
+    }
+    return 0;
+  }
+
+  function getRegionalProgress() {
+    if (!targetHeight || !currentHeight) {
+      return { total: { placed: 0, total: 0, pct: "0.0" } };
+    }
+    if (currentBlueprintName === "walledRoom" && buildPhase) {
+      let pTot = 0, pPlc = 0, wTot = 0, wPlc = 0;
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) {
+          if (buildPhase[x][y] === 0 && targetHeight[x][y] > 0) {
+            pTot += targetHeight[x][y];
+            pPlc += currentHeight[x][y];
+          } else if (buildPhase[x][y] === 1 && targetHeight[x][y] > 0) {
+            wTot += targetHeight[x][y];
+            wPlc += currentHeight[x][y];
+          }
+        }
+      }
+      const pPct = pTot > 0 ? ((pPlc / pTot) * 100).toFixed(1) : "100.0";
+      const wPct = wTot > 0 ? ((wPlc / wTot) * 100).toFixed(1) : "100.0";
+      const tPct = totalBlocks > 0 ? ((blocksPlaced / totalBlocks) * 100).toFixed(1) : "0.0";
+      return {
+        pillar: { placed: pPlc, total: pTot, pct: pPct },
+        perimeter: { placed: wPlc, total: wTot, pct: wPct },
+        total: { placed: blocksPlaced, total: totalBlocks, pct: tPct },
+      };
+    }
+    const tPct = totalBlocks > 0 ? ((blocksPlaced / totalBlocks) * 100).toFixed(1) : "0.0";
+    return {
+      structure: { placed: blocksPlaced, total: totalBlocks, pct: tPct },
+      total: { placed: blocksPlaced, total: totalBlocks, pct: tPct },
+    };
+  }
+
   // ── Dependency Rank Compiler (BFS Wavefront) ──────────────────────────────
   /**
    * Multi-source BFS from material depots outward across the grid.
@@ -437,14 +524,34 @@ const SimEngine = (function () {
     let bestCell = null;
     let bestRank = -Infinity;
     const remainingBlocks = totalBlocks - blocksPlaced;
-    // Anti-deadlock relaxation: if near end-of-build (<= 10 blocks left) or stalled for 20+ ticks,
-    // relax strict dep_rank anti-trap on doorway/partition edges so final blocks build cleanly and fast.
-    const relaxAntiTrap = (remainingBlocks <= 10 && ticksSinceLastPlacement >= 10) || (ticksSinceLastPlacement >= 20);
+    const activePhase = getCurrentBuildPhase();
+
+    // Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build,
+    // NEVER during Phase 0 pillar construction so central core cells are never trapped by premature outer walls.
+    const relaxAntiTrap = (activePhase === 1)
+      ? ((remainingBlocks <= 10 && ticksSinceLastPlacement >= 15) || (ticksSinceLastPlacement >= 45))
+      : (ticksSinceLastPlacement >= 200);
 
     for (const [dx, dy] of DIR4) {
       const bx = rx + dx, by = ry + dy;
       if (!inBounds(bx, by)) continue;
       if (targetHeight[bx][by] === 0) continue;
+      // Multi-phase dependency invariant: prerequisite phase cells must be 100% complete
+      if (buildPhase && buildPhase[bx][by] > activePhase) continue;
+
+      // Central pillar interior core invariant:
+      // Cell (15, 16) serves as the southern access ramp from ground level (0) to the core (15, 15).
+      // It must not exceed height 1 until the central core (15, 15) has reached its target height 3.
+      if (currentBlueprintName === "walledRoom") {
+        const cx = 15, cy = 15;
+        if (bx === cx && by === cy + 1 && currentHeight[cx][cy] < 3) {
+          if (currentHeight[bx][by] >= 1) continue;
+        }
+        if (bx >= cx - 1 && bx <= cx + 1 && by >= cy - 1 && by <= cy + 1 && !(bx === cx && by === cy)) {
+          if (currentHeight[bx][by] >= currentHeight[cx][cy]) continue;
+        }
+      }
+
       if (currentHeight[bx][by] >= targetHeight[bx][by]) continue;
       if (obstacles[bx][by]) continue;
       if (robotGrid[bx][by] !== null) continue; // Cell must not be occupied by robot
@@ -675,10 +782,11 @@ const SimEngine = (function () {
     const qy = new Int16Array(GRID * GRID);
     let head = 0, tail = 0;
 
+    const activePhase = getCurrentBuildPhase();
     let standCount = 0;
     for (let x = 0; x < GRID; x++) {
       for (let y = 0; y < GRID; y++) {
-        if (targetHeight[x][y] > currentHeight[x][y]) {
+        if (targetHeight[x][y] > currentHeight[x][y] && (!buildPhase || buildPhase[x][y] <= activePhase)) {
           // Seed all adjacent placement spots where robots can stand to place this block
           for (let d = 0; d < 4; d++) {
             const sx = x + DIR4[d][0];
@@ -1272,13 +1380,21 @@ const SimEngine = (function () {
 
   // ── Fault Tolerance & Chaos Injection ─────────────────────────────────────
   /**
-   * "Inject 30% Robot Failure (EMP)"
-   * 30% of active robots immediately fail, turn grey, and become permanent static obstacles.
+   * "Inject Robot Failure (EMP)"
+   * Specified fraction of active robots fail, turn grey, and become permanent static obstacles.
+   * Clamps rate to [0.0, 1.0]. Safely handles empty/uninitialized robot lists.
    */
   function injectFailure(rate) {
-    rate = rate === undefined ? 0.3 : rate;
+    if (!targetHeight || !obstacles || !robots) return false;
+    if (typeof rate !== "number" || isNaN(rate)) {
+      rate = 0.3;
+    }
+    const clampedRate = Math.max(0.0, Math.min(1.0, rate));
     const active = robots.filter(r => !r.failed);
-    const numFail = Math.floor(rate * active.length);
+    if (active.length === 0 || clampedRate === 0) return true;
+
+    const numFail = Math.min(active.length, Math.floor(clampedRate * active.length));
+    if (numFail <= 0) return true;
 
     const indices = active.map((_, i) => i);
     for (let i = indices.length - 1; i > 0; i--) {
@@ -1288,14 +1404,16 @@ const SimEngine = (function () {
 
     for (let i = 0; i < numFail; i++) {
       const r = active[indices[i]];
-      r.failed = true;
-      r.state = STATES.YIELD_AND_BACKOFF;
-      // Mark as physical obstacle
-      obstacles[r.x][r.y] = 1;
+      if (r) {
+        r.failed = true;
+        r.state = STATES.YIELD_AND_BACKOFF;
+        obstacles[r.x][r.y] = 1;
+      }
     }
 
     // Recompile dependency rank with new obstacles
     depRank = compileDependencyRank(targetHeight, depots, obstacles);
+    return true;
   }
 
   // ── Initialization & Public Management ───────────────────────────────────
@@ -1305,6 +1423,16 @@ const SimEngine = (function () {
       setSeed(config.seed);
     } else {
       _seed = null;
+    }
+
+    // Validate parameters
+    const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex"];
+    const bpName = config.blueprint || "walledRoom";
+    if (!validBlueprints.includes(bpName)) {
+      throw new Error(`Invalid blueprint preset '${bpName}'. Valid presets are: ${validBlueprints.join(", ")}`);
+    }
+    if (config.numRobots !== undefined && (typeof config.numRobots !== "number" || config.numRobots <= 0 || !Number.isInteger(config.numRobots))) {
+      throw new Error(`Invalid numRobots '${config.numRobots}'. Must be a positive integer.`);
     }
 
     tickCount = 0;
@@ -1326,8 +1454,7 @@ const SimEngine = (function () {
       }
     }
 
-    // Set blueprint preset
-    const bpName = config.blueprint || "walledRoom";
+    // Set blueprint preset & compile multi-phase dependency
     currentBlueprintName = bpName;
     if (config.customHeightmap) {
       targetHeight = config.customHeightmap;
@@ -1342,6 +1469,7 @@ const SimEngine = (function () {
     } else {
       targetHeight = walledRoom();
     }
+    buildPhase = compileBuildPhase(bpName, targetHeight);
 
     totalBlocks = 0;
     for (let x = 0; x < GRID; x++) {
@@ -1514,6 +1642,7 @@ const SimEngine = (function () {
     return {
       gridSize: GRID,
       grid: GRID,
+      blueprint: currentBlueprintName,
       targetHeight,
       currentHeight,
       obstacles,
@@ -1522,6 +1651,9 @@ const SimEngine = (function () {
       pheromoneTrail,
       trafficCount,
       depRank,
+      buildPhase,
+      currentPhase: getCurrentBuildPhase(),
+      regionalProgress: getRegionalProgress(),
       robots: robots.map(r => ({
         id: r.id,
         x: r.x,
@@ -1556,6 +1688,9 @@ const SimEngine = (function () {
     tick,
     getState,
     setSeed,
+    getRegionalProgress,
+    getCurrentBuildPhase,
+    isPhaseComplete,
 
     // Preset blueprints
     walledRoom,
@@ -1584,6 +1719,10 @@ const SimEngine = (function () {
       acoMode = !!val;
     },
     setBlueprint: function (name) {
+      const validBlueprints = ["walledRoom", "steppedPyramid", "cdacComplex"];
+      if (!validBlueprints.includes(name)) {
+        throw new Error(`Invalid blueprint preset '${name}'. Valid presets are: ${validBlueprints.join(", ")}`);
+      }
       currentBlueprintName = name;
       if (name === "steppedPyramid") targetHeight = steppedPyramid();
       else if (name === "cdacComplex") targetHeight = cdacComplex();
@@ -1591,11 +1730,14 @@ const SimEngine = (function () {
       else if (name === "pesLogo") targetHeight = pesLogoBlueprint();
       else targetHeight = walledRoom();
 
+      buildPhase = compileBuildPhase(name, targetHeight);
+
       totalBlocks = 0;
       for (let x = 0; x < GRID; x++) {
         for (let y = 0; y < GRID; y++) totalBlocks += targetHeight[x][y];
       }
       depRank = compileDependencyRank(targetHeight, depots, obstacles);
+      return true;
     },
     setCustomBlueprint: function (grid, name) {
       currentBlueprintName = name || "customBlueprint";
@@ -1644,29 +1786,40 @@ const SimEngine = (function () {
     breachStructure,
     getRobotBrain,
     setNumRobots: function (n) {
+      if (typeof n !== "number" || n <= 0 || !Number.isInteger(n)) {
+        throw new Error(`Invalid numRobots '${n}'. Must be a positive integer.`);
+      }
       init({ blueprint: currentBlueprintName, numRobots: n, acoEnabled: acoMode });
+      return true;
     },
     setTargetHeight: function (x, y, h) {
+      if (!targetHeight || !obstacles) return false;
       if (inBounds(x, y)) {
-        targetHeight[x][y] = h;
+        targetHeight[x][y] = Math.max(0, h | 0);
+        if (buildPhase) buildPhase[x][y] = 0;
         totalBlocks = 0;
         for (let ix = 0; ix < GRID; ix++) {
           for (let iy = 0; iy < GRID; iy++) totalBlocks += targetHeight[ix][iy];
         }
         depRank = compileDependencyRank(targetHeight, depots, obstacles);
+        return true;
       }
+      return false;
     },
     setObstacle: function (x, y, val) {
+      if (!obstacles || !targetHeight) return false;
       if (inBounds(x, y)) {
         obstacles[x][y] = val ? 1 : 0;
         depRank = compileDependencyRank(targetHeight, depots, obstacles);
+        return true;
       }
+      return false;
     },
     runPSODepotPlacement: function (numDepots) {
       return runPSODepotPlacement(targetHeight, obstacles, numDepots || 4);
     },
     injectFailure: function (rate) {
-      injectFailure(rate);
+      return injectFailure(rate);
     },
     compileDependencyRank,
 

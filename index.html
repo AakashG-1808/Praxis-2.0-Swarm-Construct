@@ -1593,7 +1593,15 @@
       const total = state.totalBlocks;
       const pct = total > 0 ? ((placed / total) * 100).toFixed(1) : "0.0";
 
-      document.getElementById("t-progress").textContent = `${placed} / ${total} (${pct}%)`;
+      const progEl = document.getElementById("t-progress");
+      progEl.textContent = `${placed} / ${total} (${pct}%)`;
+      if (state.regionalProgress && state.regionalProgress.pillar) {
+        const p = state.regionalProgress.pillar;
+        const w = state.regionalProgress.perimeter;
+        progEl.title = `Pillar: ${p.placed}/${p.total} (${p.pct}%) | Perimeter: ${w.placed}/${w.total} (${w.pct}%)`;
+      } else {
+        progEl.title = "";
+      }
       document.getElementById("t-ticks").textContent = state.tickCount;
 
       const active = state.robots.filter(r => !r.failed).length;

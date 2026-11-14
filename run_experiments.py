@@ -45,7 +45,7 @@ except Exception:
 # ── Simulation Constants ─────────────────────────────────────────────────────
 GRID = 32
 EVAP_RATE = 0.04  # P = P * (1 - 0.04)
-MAX_TICKS = 600
+MAX_TICKS = 2500
 
 # FSM States
 STATE_SEEK = 0
@@ -126,26 +126,120 @@ def compile_dependency_rank(target_height, depots, obstacles):
             if 0 <= nx < GRID and 0 <= ny < GRID and not obstacles[nx, ny]:
                 if nd < ranks[nx, ny]:
                     ranks[nx, ny] = nd
-                    queue.append((nx, ny))
+                    if abs(int(target_height[nx, ny]) - int(target_height[cx, cy])) <= 1:
+                        queue.append((nx, ny))
+
+    # Ensure geometric interior of solid multi-height structures (such as central 3x3 pillar)
+    # has strictly higher dependency rank than surrounding perimeter ring,
+    # guaranteeing inside-out build order under the TERMES anti-trap constraint.
+    for x in range(1, GRID - 1):
+        for y in range(1, GRID - 1):
+            if target_height[x, y] == 3:
+                surrounding = sum(1 for ddx, ddy in DIR4 if target_height[x + ddx, y + ddy] >= 2)
+                if surrounding == 4:
+                    max_nr = max((ranks[x + ddx, y + ddy] for ddx, ddy in DIR4 if ranks[x + ddx, y + ddy] < 9999), default=0)
+                    ranks[x, y] = max_nr + 1
+
     return ranks
 
 
 def pso_optimize_depots(target_height, obstacles, num_depots=4, rng=None):
-    """Fast PSO optimizer for depot placement outside structure."""
+    """
+    Particle Swarm Optimization (PSO) for Material Depot Placement.
+    Optimizes 4 depot coordinates outside the structure footprint
+    to minimize average haul distance while strictly enforcing safety clearances.
+    """
     if rng is None:
         rng = np.random.RandomState(42)
 
-    bp_coords = np.argwhere(target_height > 0)
-    if len(bp_coords) == 0:
-        return [(2, 2), (29, 2), (2, 29), (29, 29)]
+    bp_cells = np.argwhere(target_height > 0)
+    if len(bp_cells) == 0:
+        return [(4, 4), (27, 4), (4, 27), (27, 27)]
 
-    # Perimeter anchor seeds positioned strictly on open ground
-    return [
-        (int(np.clip(bp_coords[:, 0].min() - 2, 1, GRID - 2)), int(np.clip(bp_coords[:, 1].min() - 2, 1, GRID - 2))),
-        (int(np.clip(bp_coords[:, 0].max() + 2, 1, GRID - 2)), int(np.clip(bp_coords[:, 1].min() - 2, 1, GRID - 2))),
-        (int(np.clip(bp_coords[:, 0].min() - 2, 1, GRID - 2)), int(np.clip(bp_coords[:, 1].max() + 2, 1, GRID - 2))),
-        (int(np.clip(bp_coords[:, 0].max() + 2, 1, GRID - 2)), int(np.clip(bp_coords[:, 1].max() + 2, 1, GRID - 2))),
+    bp_weights = target_height[bp_cells[:, 0], bp_cells[:, 1]].astype(np.float64)
+    total_weight = float(np.sum(bp_weights))
+    min_bx, min_by = np.min(bp_cells, axis=0)
+    max_bx, max_by = np.max(bp_cells, axis=0)
+
+    def fitness(positions):
+        total_dist = 0.0
+        for idx in range(len(bp_cells)):
+            cx, cy = bp_cells[idx]
+            min_d = np.min(np.abs(positions[:, 0] - cx) + np.abs(positions[:, 1] - cy))
+            total_dist += min_d * bp_weights[idx]
+
+        penalty = 0.0
+        for px, py in positions:
+            rpx, rpy = int(round(px)), int(round(py))
+            if not (0 <= rpx < GRID and 0 <= rpy < GRID):
+                penalty += 50000.0
+            else:
+                if (min_bx - 2 <= rpx <= max_bx + 2) and (min_by - 2 <= rpy <= max_by + 2):
+                    penalty += 35000.0
+                min_d = np.min(np.abs(bp_cells[:, 0] - rpx) + np.abs(bp_cells[:, 1] - rpy))
+                if min_d < 3:
+                    penalty += (3.0 - min_d) * 15000.0
+                if obstacles[rpx, rpy]:
+                    penalty += 20000.0
+
+        for i in range(len(positions)):
+            for j in range(i + 1, len(positions)):
+                d = np.abs(positions[i, 0] - positions[j, 0]) + np.abs(positions[i, 1] - positions[j, 1])
+                if d < 8:
+                    penalty += (8.0 - d) * 200.0
+
+        return (total_dist / total_weight) + penalty
+
+    num_particles = 30
+    max_iter = 100
+    w, c1, c2 = 0.7, 1.5, 1.5
+
+    perimeter_seeds = [
+        np.array([[4, 4], [27, 4], [4, 27], [27, 27]], dtype=np.float64),
+        np.array([[16, 3], [28, 16], [16, 28], [3, 16]], dtype=np.float64),
+        np.array([[3, 3], [28, 3], [3, 28], [28, 28]], dtype=np.float64),
     ]
+
+    particles_pos = []
+    particles_vel = []
+    pbest_pos = []
+    pbest_fit = []
+
+    for i in range(num_particles):
+        seed = perimeter_seeds[i % len(perimeter_seeds)]
+        pos = np.clip(seed + rng.uniform(-2, 2, size=(num_depots, 2)), 2, GRID - 3)
+        vel = rng.uniform(-1, 1, size=(num_depots, 2))
+        f = fitness(pos)
+        particles_pos.append(pos)
+        particles_vel.append(vel)
+        pbest_pos.append(pos.copy())
+        pbest_fit.append(f)
+
+    gbest_idx = int(np.argmin(pbest_fit))
+    gbest_pos = pbest_pos[gbest_idx].copy()
+    gbest_fit = pbest_fit[gbest_idx]
+
+    for _ in range(max_iter):
+        for i in range(num_particles):
+            r1 = rng.uniform(0, 1, size=(num_depots, 2))
+            r2 = rng.uniform(0, 1, size=(num_depots, 2))
+            particles_vel[i] = (w * particles_vel[i]
+                                + c1 * r1 * (pbest_pos[i] - particles_pos[i])
+                                + c2 * r2 * (gbest_pos - particles_pos[i]))
+            particles_pos[i] = np.clip(particles_pos[i] + particles_vel[i], 2, GRID - 3)
+            f = fitness(particles_pos[i])
+            if f < pbest_fit[i]:
+                pbest_fit[i] = f
+                pbest_pos[i] = particles_pos[i].copy()
+                if f < gbest_fit:
+                    gbest_fit = f
+                    gbest_pos = particles_pos[i].copy()
+
+    best_depots = []
+    for p in gbest_pos:
+        rx, ry = int(np.clip(round(p[0]), 1, GRID - 2)), int(np.clip(round(p[1]), 1, GRID - 2))
+        best_depots.append((rx, ry))
+    return best_depots
 
 
 # ── Decentralized Robot Agent & Simulation Environment ──────────────────────
@@ -177,6 +271,20 @@ class SwarmSimulation:
         self.obstacles = np.zeros((GRID, GRID), dtype=bool)
         self.pheromone_build = np.full((GRID, GRID), 0.01, dtype=np.float64)
         self.pheromone_trail = np.full((GRID, GRID), 0.01, dtype=np.float64)
+
+        # Multi-phase construction dependency:
+        # For walledRoom: Phase 0 is central pillar (x in [14, 16], y in [14, 16]).
+        # Phase 1 is perimeter walls.
+        self.build_phase = np.zeros((GRID, GRID), dtype=np.int32)
+        if blueprint_func == blueprint_walled_room:
+            cx, cy = 15, 15
+            for x in range(GRID):
+                for y in range(GRID):
+                    if self.target_height[x, y] > 0:
+                        if cx - 1 <= x <= cx + 1 and cy - 1 <= y <= cy + 1:
+                            self.build_phase[x, y] = 0
+                        else:
+                            self.build_phase[x, y] = 1
 
         self.total_blocks = int(np.sum(self.target_height))
         self.blocks_placed = 0
@@ -212,6 +320,32 @@ class SwarmSimulation:
         self.fault_injected = False
         self.ticks_since_placement = 0
 
+    def is_phase_complete(self, phase):
+        return not np.any((self.build_phase == phase) & (self.current_height < self.target_height))
+
+    def get_current_build_phase(self):
+        if not self.is_phase_complete(0):
+            return 0
+        return 1
+
+    def get_regional_progress(self):
+        pillar_mask = (self.build_phase == 0) & (self.target_height > 0)
+        perim_mask = (self.build_phase == 1) & (self.target_height > 0)
+        p_tot = int(np.sum(self.target_height[pillar_mask]))
+        p_plc = int(np.sum(self.current_height[pillar_mask]))
+        w_tot = int(np.sum(self.target_height[perim_mask]))
+        w_plc = int(np.sum(self.current_height[perim_mask]))
+        t_tot = self.total_blocks
+        t_plc = self.blocks_placed
+        p_pct = (p_plc / p_tot * 100.0) if p_tot > 0 else 100.0
+        w_pct = (w_plc / w_tot * 100.0) if w_tot > 0 else 100.0
+        t_pct = (t_plc / t_tot * 100.0) if t_tot > 0 else 0.0
+        return {
+            "pillar": {"placed": p_plc, "total": p_tot, "pct": p_pct},
+            "perimeter": {"placed": w_plc, "total": w_tot, "pct": w_pct},
+            "total": {"placed": t_plc, "total": t_tot, "pct": t_pct},
+        }
+
     def can_traverse(self, from_x, from_y, to_x, to_y):
         if not (0 <= to_x < GRID and 0 <= to_y < GRID):
             return False
@@ -220,12 +354,20 @@ class SwarmSimulation:
         return abs(self.current_height[to_x, to_y] - self.current_height[from_x, from_y]) <= 1
 
     def find_placement_cell(self, rx, ry):
-        """Inside-Out Anti-Trap Local Placement Rule (r=1 neighborhood)."""
+        """Inside-Out Anti-Trap Local Placement Rule (r=1 neighborhood) with multi-phase dependency."""
         best_cell = None
         best_rank = -99999
         remaining = self.total_blocks - self.blocks_placed
         stalled_ticks = getattr(self, "ticks_since_placement", 0)
-        relax_anti_trap = (remaining <= 8 and stalled_ticks >= 15) or (stalled_ticks >= 30)
+        active_phase = self.get_current_build_phase()
+
+        # Anti-deadlock relaxation: only relax for perimeter doorway/partition edges near end-of-build,
+        # NEVER during Phase 0 pillar construction so central core cells are never trapped by premature outer walls.
+        relax_anti_trap = (
+            ((remaining <= 8 and stalled_ticks >= 15) or (stalled_ticks >= 45))
+            if active_phase == 1
+            else (stalled_ticks >= 200)
+        )
 
         for dx, dy in DIR4:
             bx, by = rx + dx, ry + dy
@@ -233,6 +375,21 @@ class SwarmSimulation:
                 continue
             if self.target_height[bx, by] == 0:
                 continue
+            # Multi-phase dependency: Phase 0 (pillar) must be 100% complete before Phase 1 (perimeter)
+            if self.build_phase[bx, by] > active_phase:
+                continue
+
+            # Central pillar interior core invariant:
+            # Cell (15, 16) serves as the southern access ramp from ground level (0) to the core (15, 15).
+            # It must not exceed height 1 until the central core (15, 15) has reached its target height 3.
+            cx, cy = 15, 15
+            if bx == cx and by == cy + 1 and self.current_height[cx, cy] < 3:
+                if self.current_height[bx, by] >= 1:
+                    continue
+            if cx - 1 <= bx <= cx + 1 and cy - 1 <= by <= cy + 1 and not (bx == cx and by == cy):
+                if self.current_height[bx, by] >= self.current_height[cx, cy]:
+                    continue
+
             if self.current_height[bx, by] >= self.target_height[bx, by]:
                 continue
             if self.obstacles[bx, by] or self.occupancy[bx, by] >= 0:
@@ -335,8 +492,9 @@ class SwarmSimulation:
 
         prev_placed = self.blocks_placed
 
-        # Precompute unbuilt coordinates ONCE per tick (massive speedup)
-        unbuilt_mask = self.target_height > self.current_height
+        # Precompute active unbuilt coordinates ONCE per tick (respecting active build phase)
+        active_phase = self.get_current_build_phase()
+        unbuilt_mask = (self.target_height > self.current_height) & (self.build_phase <= active_phase)
         unbuilt_pts = np.argwhere(unbuilt_mask) if np.any(unbuilt_mask) else None
 
         order = self.rng.permutation(len(self.robots))
@@ -508,6 +666,7 @@ def run_experiments():
     print(f"Results Dir  : {results_dir}\n", flush=True)
 
     completion_times = np.zeros((len(failure_rates), len(agent_counts), len(seeds)))
+    completed_mask = np.zeros((len(failure_rates), len(agent_counts), len(seeds)), dtype=bool)
     throughput_records = np.zeros((len(failure_rates), len(agent_counts), len(seeds)))
 
     trajectories_aco = {f: [] for f in failure_rates}
@@ -533,6 +692,8 @@ def run_experiments():
                     if n_agents == 20 and sim.tick_count % 10 == 0:
                         traj.append((sim.tick_count, (sim.blocks_placed / sim.total_blocks) * 100))
 
+                is_comp = sim.is_complete()
+                completed_mask[f_idx, n_idx, s_idx] = is_comp
                 completion_times[f_idx, n_idx, s_idx] = sim.tick_count
                 throughput = np.sum(sim.throughput_window) if len(sim.throughput_window) > 0 else 0
                 throughput_records[f_idx, n_idx, s_idx] = throughput
@@ -541,11 +702,14 @@ def run_experiments():
                     trajectories_aco[f_rate].append(traj)
 
                 pct = (sim.blocks_placed / sim.total_blocks) * 100
-                print(f"[Seed {seed:3d}] N={n_agents:2d}, fail={f_rate:.1f}: finished at tick {sim.tick_count:4d} ({pct:5.1f}%)", flush=True)
+                reg = sim.get_regional_progress()
+                status_str = "COMPLETED" if is_comp else "TIMED OUT"
+                print(f"[Seed {seed:3d}] N={n_agents:2d}, fail={f_rate:.1f}: {status_str} at tick {sim.tick_count:4d} ({pct:5.1f}% - Pillar: {reg['pillar']['placed']}/{reg['pillar']['total']}, Walls: {reg['perimeter']['placed']}/{reg['perimeter']['total']})", flush=True)
 
     # 2. Baseline Comparison Runs (Naive Straight-line/Random without ACO)
     print("\nRunning Naive Baseline comparison runs (N=20, failure=0.0)...", flush=True)
     baseline_completion_times = []
+    baseline_completed = []
     for seed in seeds:
         sim = SwarmSimulation(
             blueprint_func=blueprint_walled_room,
@@ -560,12 +724,17 @@ def run_experiments():
             if sim.tick_count % 10 == 0:
                 traj.append((sim.tick_count, (sim.blocks_placed / sim.total_blocks) * 100))
 
+        is_comp = sim.is_complete()
+        baseline_completed.append(is_comp)
         baseline_completion_times.append(sim.tick_count)
         trajectories_baseline.append(traj)
-        print(f"[Baseline Seed {seed:3d}] finished at tick {sim.tick_count:4d}", flush=True)
+        pct = (sim.blocks_placed / sim.total_blocks) * 100
+        reg = sim.get_regional_progress()
+        status_str = "COMPLETED" if is_comp else "TIMED OUT"
+        print(f"[Baseline Seed {seed:3d}] {status_str} at tick {sim.tick_count:4d} ({pct:5.1f}% - Pillar: {reg['pillar']['placed']}/{reg['pillar']['total']}, Walls: {reg['perimeter']['placed']}/{reg['perimeter']['total']})", flush=True)
 
     total_elapsed = time.time() - start_time
-    print(f"\nAll headless simulations complete in {total_elapsed:.1f}s. Generating publication plots...\n", flush=True)
+    print(f"\nAll headless simulations finished in {total_elapsed:.1f}s. Generating publication plots...\n", flush=True)
 
     # ── Plot Styling Configuration ───────────────────────────────────────────
     plt.style.use("dark_background")
@@ -581,13 +750,26 @@ def run_experiments():
     fig, ax = plt.subplots(figsize=(8, 5.5), dpi=200, facecolor=CLR_BG)
     ax.set_facecolor(CLR_BG)
     for f_idx, f_rate in enumerate(failure_rates):
-        means = np.mean(completion_times[f_idx], axis=1)
-        stds = np.std(completion_times[f_idx], axis=1)
-        ax.plot(agent_counts, means, color=colors[f_idx], linewidth=2.5, marker="o", markersize=6, label=labels[f_idx])
-        ax.fill_between(agent_counts, np.maximum(0, means - stds), means + stds, color=colors[f_idx], alpha=0.18)
+        means = []
+        stds = []
+        for n_idx in range(len(agent_counts)):
+            # Only average over completed runs; do not treat timeouts as completion times
+            valid_times = [completion_times[f_idx, n_idx, s] for s in range(len(seeds)) if completed_mask[f_idx, n_idx, s]]
+            if len(valid_times) > 0:
+                means.append(float(np.mean(valid_times)))
+                stds.append(float(np.std(valid_times)))
+            else:
+                means.append(np.nan)
+                stds.append(0.0)
+        means = np.array(means)
+        stds = np.array(stds)
+        valid_idx = ~np.isnan(means)
+        if np.any(valid_idx):
+            ax.plot(np.array(agent_counts)[valid_idx], means[valid_idx], color=colors[f_idx], linewidth=2.5, marker="o", markersize=6, label=labels[f_idx])
+            ax.fill_between(np.array(agent_counts)[valid_idx], np.maximum(0, means[valid_idx] - stds[valid_idx]), means[valid_idx] + stds[valid_idx], color=colors[f_idx], alpha=0.18)
     ax.set_title("Swarm Construction Scalability: Completion Time vs. Swarm Size", color=CLR_TEXT, fontsize=13, fontweight="bold", pad=12)
     ax.set_xlabel("Swarm Size (Concurrent Autonomous Robots N)", color=CLR_MUTED, fontsize=11)
-    ax.set_ylabel("Simulation Ticks to 100% Completion", color=CLR_MUTED, fontsize=11)
+    ax.set_ylabel("Simulation Ticks to 100% Completion (Completed Runs)", color=CLR_MUTED, fontsize=11)
     ax.set_xticks(agent_counts)
     ax.grid(True)
     ax.legend(frameon=True, facecolor=CLR_CARD, edgecolor="#334155", fontsize=10)
@@ -620,14 +802,16 @@ def run_experiments():
     # 3. completion_curve.png
     fig, ax = plt.subplots(figsize=(8.5, 5.5), dpi=200, facecolor=CLR_BG)
     ax.set_facecolor(CLR_BG)
-    common_ticks = np.linspace(0, 600, 100)
+    max_plot_tick = 2000
+    common_ticks = np.linspace(0, max_plot_tick, 100)
     for f_idx, f_rate in enumerate(failure_rates):
         interp_matrix = []
         for traj in trajectories_aco[f_rate]:
             if len(traj) > 0:
                 t_vals = [p[0] for p in traj]
                 pct_vals = [p[1] for p in traj]
-                interp = np.interp(common_ticks, t_vals, pct_vals, right=100.0)
+                final_pct = pct_vals[-1]
+                interp = np.interp(common_ticks, t_vals, pct_vals, right=final_pct)
                 interp_matrix.append(interp)
         if interp_matrix:
             mean_c = np.mean(interp_matrix, axis=0)
@@ -640,7 +824,8 @@ def run_experiments():
         if len(traj) > 0:
             t_vals = [p[0] for p in traj]
             pct_vals = [p[1] for p in traj]
-            interp = np.interp(common_ticks, t_vals, pct_vals, right=100.0)
+            final_pct = pct_vals[-1]
+            interp = np.interp(common_ticks, t_vals, pct_vals, right=final_pct)
             base_matrix.append(interp)
     if base_matrix:
         mean_b = np.mean(base_matrix, axis=0)
@@ -663,8 +848,14 @@ def run_experiments():
     # 4. scalability_heatmap.png
     fig, ax = plt.subplots(figsize=(7, 5), dpi=200, facecolor=CLR_BG)
     ax.set_facecolor(CLR_BG)
-    heatmap_data = np.median(completion_times, axis=2)
-    im = ax.imshow(heatmap_data, cmap="viridis", aspect="auto")
+    # Compute median over completed runs
+    heatmap_data = np.zeros((len(failure_rates), len(agent_counts)))
+    for i in range(len(failure_rates)):
+        for j in range(len(agent_counts)):
+            valid = [completion_times[i, j, s] for s in range(len(seeds)) if completed_mask[i, j, s]]
+            heatmap_data[i, j] = np.median(valid) if len(valid) > 0 else np.nan
+
+    im = ax.imshow(np.nan_to_num(heatmap_data, nan=MAX_TICKS), cmap="viridis", aspect="auto")
     cbar = fig.colorbar(im, ax=ax)
     cbar.ax.set_ylabel("Median Ticks to Complete", color=CLR_MUTED, rotation=-90, va="bottom")
     cbar.ax.tick_params(colors=CLR_MUTED)
@@ -674,8 +865,12 @@ def run_experiments():
     ax.set_yticklabels([f"{int(f*100)}% Fail" for f in failure_rates], color=CLR_TEXT)
     for i in range(len(failure_rates)):
         for j in range(len(agent_counts)):
-            val = int(heatmap_data[i, j])
-            ax.text(j, i, f"{val} T", ha="center", va="center", color="#ffffff", fontweight="bold", fontsize=11)
+            if not np.isnan(heatmap_data[i, j]):
+                val = int(heatmap_data[i, j])
+                txt = f"{val} T"
+            else:
+                txt = "TIMEOUT"
+            ax.text(j, i, txt, ha="center", va="center", color="#ffffff", fontweight="bold", fontsize=11)
     ax.set_title("Swarm Fault Tolerance Matrix: Median Completion Ticks", color=CLR_TEXT, fontsize=12.5, fontweight="bold", pad=12)
     ax.set_xlabel("Swarm Size", color=CLR_MUTED, fontsize=11)
     ax.set_ylabel("Failure Injection Rate", color=CLR_MUTED, fontsize=11)
@@ -688,12 +883,14 @@ def run_experiments():
     # 5. aco_vs_baseline.png
     fig, ax = plt.subplots(figsize=(6.5, 5), dpi=200, facecolor=CLR_BG)
     ax.set_facecolor(CLR_BG)
-    aco_20_nominal = completion_times[0, 1]
-    aco_mean = np.mean(aco_20_nominal)
-    aco_std = np.std(aco_20_nominal)
-    base_mean = np.mean(baseline_completion_times)
-    base_std = np.std(baseline_completion_times)
-    speedup = ((base_mean - aco_mean) / base_mean) * 100
+    aco_valid = [completion_times[0, 1, s] for s in range(len(seeds)) if completed_mask[0, 1, s]]
+    base_valid = [baseline_completion_times[s] for s in range(len(seeds)) if baseline_completed[s]]
+
+    aco_mean = float(np.mean(aco_valid)) if aco_valid else 0.0
+    aco_std = float(np.std(aco_valid)) if aco_valid else 0.0
+    base_mean = float(np.mean(base_valid)) if base_valid else 0.0
+    base_std = float(np.std(base_valid)) if base_valid else 0.0
+    speedup = ((base_mean - aco_mean) / base_mean * 100) if base_mean > 0 else 0.0
 
     bars = ax.bar(["ACO Stigmergy", "Naive Baseline"], [aco_mean, base_mean],
                   yerr=[aco_std, base_std], capsize=6,

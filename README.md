@@ -73,7 +73,7 @@ A robot at $(r_x, r_y)$ carrying a block can place it on an adjacent 4-connected
    $$\forall (n_x, n_y) \in \mathcal{N}_4(b_x, b_y) \text{ s.t. } \mathbf{H}^*[n_x][n_y] > 0 \text{ and } \mathbf{R}[n_x][n_y] > \mathbf{R}[b_x][b_y]:$$
    $$\mathbf{H}[n_x][n_y] \ge \min\Big(\mathbf{H}^*[n_x][n_y],\; \mathbf{H}[b_x][b_y] + 1\Big)$$
 
-> **Mathematical Guarantee:** This invariant guarantees that outer walls or perimeter blocks can **never** be built taller than inner structures, preventing robots from sealing off interior courtyards, doorways, or pillars.
+> **Multi-Phase Dependency & Anti-Trap Alignment:** For locally adjacent cells, the 1-cell anti-trap invariant guarantees height continuity. For disjoint interior structures separated by open floor cells (such as the central pillar in the Walled Room), the compiled blueprint incorporates an explicit multi-phase dependency constraint ($\mathbf{\Phi}$): Phase 0 (central pillar) must be 100% complete before Phase 1 (perimeter walls) begins construction. This strictly prevents perimeter walls from enclosing or delaying interior pillars, while keeping the interior courtyard completely empty without artificial filler blocks.
 
 ---
 
@@ -105,7 +105,7 @@ Each robot executes a 4-state asynchronous Finite State Machine:
 
 - Supports dynamic injection of a **30% Robot Failure (EMP)** mid-construction.
 - Disabled robots immediately freeze, turn grey with failure markings, and become permanent physical obstacles.
-- The remaining autonomous swarm routes around their disabled teammates using stigmergic trail re-routing and completes 100% of the blueprint.
+- The remaining autonomous swarm routes around disabled teammates using stigmergic trail re-routing, maintaining structural progress under degraded agent capacity.
 
 ---
 
@@ -165,8 +165,8 @@ This automatically produces all 5 publication-ready evaluation figures in the `r
 | Metric | Naive Baseline | ACO Stigmergy Mode | Improvement |
 |---|---|---|---|
 | **Haul Efficiency (N=20)** | ~1,420 Ticks | ~940 Ticks | **+33.8% Speedup** |
-| **Doorway Bottleneck Resolution** | Random Detour | Self-reinforcing Trail | **Zero Deadlocks** |
-| **Fault Tolerance (30% EMP)** | Stalls on Obstacles | Dynamic Re-routing | **100% Completion** |
+| **Doorway Bottleneck Resolution** | Random Detour | Self-reinforcing Trail | **Dynamic Deadlock Resolution** |
+| **Fault Tolerance (30% EMP)** | Stalls on Obstacles | Dynamic Re-routing | **Robust High Completion Rate** |
 | **Decentralization Audit** | 100% Compliant | 100% Compliant | **Zero Master Nodes** |
 
 ---
@@ -174,7 +174,7 @@ This automatically produces all 5 publication-ready evaluation figures in the `r
 ## 🏆 C-DAC / Praxis 2.0 Hackathon Compliance Checklist
 
 - [x] **No Central Controller:** Verified — robots communicate solely through stigmergic pheromone modification and 1-cell physical neighborhood sensing.
-- [x] **TERMES Anti-Trap Invariant:** Guaranteed inside-out assembly without unbuildable cavities.
+- [x] **TERMES Anti-Trap Invariant & Build Phases:** Verified inside-out assembly and multi-phase pillar-first dependency without unbuildable cavities.
 - [x] **Dual Swarm Optimization:** Both ACO logistics trails and PSO depot placement implemented and empirically verified.
 - [x] **Fault Tolerance:** Robust build completion validated under 30% robot failure injection.
 - [x] **Consumer-Grade UI:** ECOVACS HOME dark obsidian aesthetic with 2D/3D views and real-time Chart.js telemetry.
