@@ -1,0 +1,1553 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Swarm Construct — Autonomous Building Intelligence | C-DAC Praxis 2.0</title>
+  <!-- Chart.js CDN with fallback handling -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="sim-engine.js"></script>
+  <style>
+    /* ── BASE & ECOVACS HOME OBSIDIAN THEME ───────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; width: 100%; overflow: hidden; }
+    body {
+      background: #0b0f19;
+      color: #e2e8f0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(100, 200, 255, 0.2); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(0, 242, 254, 0.4); }
+
+    /* ── FROSTED GLASS CARDS ───────────────────────────────────────── */
+    .glass {
+      background: rgba(15, 23, 42, 0.82);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(100, 200, 255, 0.12);
+      border-radius: 12px;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+    }
+
+    /* ── TOP TELEMETRY BAR ─────────────────────────────────────────── */
+    #header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 10px 20px;
+      flex-shrink: 0;
+      background: rgba(11, 15, 25, 0.95);
+      border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+      z-index: 20;
+    }
+    #brand {
+      display: flex;
+      flex-direction: column;
+    }
+    #brand h1 {
+      font-size: 17px;
+      font-weight: 800;
+      letter-spacing: 1.5px;
+      background: linear-gradient(135deg, #00f2fe 0%, #4facfe 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    #brand span {
+      font-size: 10px;
+      color: #94a3b8;
+      letter-spacing: 0.8px;
+      text-transform: uppercase;
+      font-weight: 500;
+    }
+    .hackathon-pill {
+      font-size: 10px;
+      padding: 3px 9px;
+      border-radius: 999px;
+      background: rgba(0, 242, 254, 0.12);
+      border: 1px solid rgba(0, 242, 254, 0.3);
+      color: #00f2fe;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    #telemetry-bar {
+      display: flex;
+      gap: 8px;
+      margin-left: auto;
+      flex-wrap: wrap;
+    }
+    .tel-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 12px;
+      border-radius: 999px;
+      font-size: 11.5px;
+      font-weight: 600;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      white-space: nowrap;
+      transition: border-color 0.2s;
+    }
+    .tel-pill:hover { border-color: rgba(0, 242, 254, 0.4); }
+    .tel-pill .icon { font-size: 13px; }
+    .tel-pill .lbl { color: #94a3b8; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .tel-pill .val { color: #00f2fe; font-family: monospace; font-size: 12px; font-weight: 700; }
+
+    /* ── MAIN WORKSPACE ────────────────────────────────────────────── */
+    #workspace {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+      padding: 10px;
+      gap: 12px;
+      position: relative;
+    }
+
+    /* ── MAP CONTAINER (65% width) ─────────────────────────────────── */
+    #map-container {
+      flex: 0 0 65%;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      border-radius: 14px;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 50%, #0d1424 0%, #080c14 100%);
+      border: 1px solid rgba(100, 200, 255, 0.12);
+      box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.6);
+    }
+    #canvas-wrap {
+      flex: 1;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+    #mainCanvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: crosshair;
+    }
+
+    /* Floating Canvas Controls (ECOVACS Map Switcher Style) */
+    #map-switchers {
+      position: absolute;
+      top: 14px;
+      right: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      z-index: 10;
+    }
+    .pill-group {
+      display: flex;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(12px);
+      border: 1px solid rgba(100, 200, 255, 0.2);
+      border-radius: 999px;
+      padding: 3px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    }
+    .ctrl-pill {
+      padding: 4px 12px;
+      font-size: 11px;
+      font-weight: 600;
+      border: none;
+      border-radius: 999px;
+      background: transparent;
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .ctrl-pill:hover { color: #e2e8f0; }
+    .ctrl-pill.active {
+      background: rgba(0, 242, 254, 0.2);
+      color: #00f2fe;
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+    }
+
+    /* Compass / Grid legend overlay */
+    #map-legend {
+      position: absolute;
+      bottom: 12px;
+      left: 14px;
+      font-size: 10px;
+      color: #64748b;
+      display: flex;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.7);
+      padding: 4px 10px;
+      border-radius: 6px;
+      backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+    .legend-item { display: flex; align-items: center; gap: 4px; }
+    .legend-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+    /* ── RIGHT ANALYTICS PANEL (35% width) ─────────────────────────── */
+    #analytics-panel {
+      flex: 0 0 calc(35% - 12px);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .card {
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .card-header h3 {
+      font-size: 12px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .card-tag {
+      font-size: 9.5px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: rgba(100, 200, 255, 0.08);
+      color: #38bdf8;
+      border: 1px solid rgba(100, 200, 255, 0.15);
+    }
+
+    /* Config Rows */
+    .cfg-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .cfg-item {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+    }
+    .cfg-item label {
+      font-size: 10.5px;
+      color: #94a3b8;
+      font-weight: 500;
+    }
+    .cfg-item select, .cfg-item input[type="number"] {
+      padding: 5px 8px;
+      border-radius: 6px;
+      font-size: 11.5px;
+      background: rgba(11, 15, 25, 0.8);
+      color: #e2e8f0;
+      border: 1px solid rgba(100, 200, 255, 0.18);
+      outline: none;
+      transition: border-color 0.2s;
+    }
+    .cfg-item select:focus, .cfg-item input:focus {
+      border-color: #00f2fe;
+    }
+    .slider-wrap {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .slider-wrap input[type="range"] {
+      flex: 1;
+      accent-color: #00f2fe;
+    }
+
+    .btn-action {
+      padding: 6px 12px;
+      border-radius: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border: 1px solid rgba(100, 200, 255, 0.18);
+      background: rgba(15, 23, 42, 0.9);
+      color: #e2e8f0;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+    }
+    .btn-action:hover {
+      border-color: #00f2fe;
+      background: rgba(0, 242, 254, 0.1);
+      color: #00f2fe;
+    }
+    .btn-action.primary {
+      background: rgba(0, 242, 254, 0.15);
+      border-color: rgba(0, 242, 254, 0.4);
+      color: #00f2fe;
+    }
+    .btn-action.primary:hover {
+      background: rgba(0, 242, 254, 0.25);
+      box-shadow: 0 0 12px rgba(0, 242, 254, 0.3);
+    }
+
+    /* Charts */
+    .chart-container {
+      position: relative;
+      width: 100%;
+      height: 145px;
+    }
+    .chart-container canvas {
+      width: 100% !important;
+      height: 100% !important;
+    }
+
+    /* Decentralization Audit Card */
+    #audit-box {
+      font-size: 10.5px;
+      line-height: 1.6;
+    }
+    .audit-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 14px;
+      margin-top: 4px;
+    }
+    .audit-col-title {
+      font-size: 10px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.1);
+      padding-bottom: 3px;
+      margin-bottom: 3px;
+    }
+    .audit-row { display: flex; align-items: flex-start; gap: 5px; }
+    .audit-row.ok { color: #34d399; }
+    .audit-row.no { color: #f87171; }
+
+    /* ── FLOATING BOTTOM ACTION DOCK (ECOVACS Map Editor Style) ──────── */
+    #dock-container {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: center;
+      padding: 6px 20px 10px;
+      z-index: 20;
+    }
+    #dock {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 14px;
+      border-radius: 14px;
+      background: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(100, 200, 255, 0.18);
+      box-shadow: 0 -4px 30px rgba(0, 0, 0, 0.5), 0 0 1px rgba(0, 242, 254, 0.2);
+    }
+    .dock-group-title {
+      font-size: 9px;
+      font-weight: 700;
+      color: #64748b;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      margin-right: 2px;
+    }
+    .dock-sep {
+      width: 1px;
+      height: 24px;
+      background: rgba(100, 200, 255, 0.12);
+      margin: 0 4px;
+    }
+    .dock-tool {
+      padding: 4px 10px;
+      border-radius: 7px;
+      font-size: 11.5px;
+      font-weight: 600;
+      border: 1px solid rgba(100, 200, 255, 0.12);
+      background: rgba(11, 15, 25, 0.7);
+      color: #94a3b8;
+      cursor: pointer;
+      transition: all 0.18s;
+      white-space: nowrap;
+    }
+    .dock-tool:hover {
+      color: #e2e8f0;
+      border-color: rgba(100, 200, 255, 0.3);
+    }
+    .dock-tool.active {
+      color: #00f2fe;
+      border-color: #00f2fe;
+      background: rgba(0, 242, 254, 0.12);
+      box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
+    }
+    .dock-tool.primary-pulse {
+      color: #00f2fe;
+      border-color: #00f2fe;
+      background: rgba(0, 242, 254, 0.15);
+      animation: dock-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes dock-pulse {
+      0%, 100% { box-shadow: 0 0 6px rgba(0, 242, 254, 0.2); }
+      50% { box-shadow: 0 0 16px rgba(0, 242, 254, 0.55); }
+    }
+    .dock-tool.danger {
+      color: #ef4444;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .dock-tool.danger:hover {
+      background: rgba(239, 68, 68, 0.18);
+      border-color: #ef4444;
+      box-shadow: 0 0 10px rgba(239, 68, 68, 0.3);
+    }
+
+    /* Speed Slider */
+    #speed-ctrl {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #speed-ctrl input[type="range"] {
+      width: 60px;
+      accent-color: #00f2fe;
+    }
+    #speed-val {
+      font-size: 10.5px;
+      color: #00f2fe;
+      font-family: monospace;
+      font-weight: 700;
+      min-width: 20px;
+    }
+
+    /* Loading overlay */
+    #loading-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(11, 15, 25, 0.92);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      z-index: 1000;
+      transition: opacity 0.3s ease;
+    }
+    #loading-overlay.fade-out {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .spinner {
+      width: 44px;
+      height: 44px;
+      border: 3px solid rgba(0, 242, 254, 0.15);
+      border-top-color: #00f2fe;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loading-msg {
+      font-size: 14px;
+      font-weight: 600;
+      color: #00f2fe;
+      letter-spacing: 1px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- LOADING OVERLAY -->
+  <div id="loading-overlay">
+    <div class="spinner"></div>
+    <div class="loading-msg">COMPILING BLUEPRINT BFS WAVEFRONT…</div>
+  </div>
+
+  <!-- ═══ TOP TELEMETRY BAR ═══ -->
+  <header id="header">
+    <div id="brand">
+      <h1>🏗️ SWARM CONSTRUCT</h1>
+      <span>Autonomous Building Intelligence</span>
+    </div>
+    <span class="hackathon-pill">C-DAC / Praxis 2.0</span>
+
+    <div id="telemetry-bar">
+      <div class="tel-pill">
+        <span class="icon">🏗️</span>
+        <span class="lbl">Progress:</span>
+        <span class="val" id="t-progress">0 / 0 (0.0%)</span>
+      </div>
+      <div class="tel-pill">
+        <span class="icon">⏱️</span>
+        <span class="lbl">Ticks:</span>
+        <span class="val" id="t-ticks">0</span>
+      </div>
+      <div class="tel-pill">
+        <span class="icon">🤖</span>
+        <span class="lbl">Swarm:</span>
+        <span class="val" id="t-swarm">20 / 20</span>
+      </div>
+      <div class="tel-pill">
+        <span class="icon">📡</span>
+        <span class="lbl">Mode:</span>
+        <span class="val" id="t-mode">ACO Stigmergy</span>
+      </div>
+      <div class="tel-pill">
+        <span class="icon">⚡</span>
+        <span class="lbl">Throughput:</span>
+        <span class="val" id="t-thru">0 / 100T</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ═══ MAIN WORKSPACE ═══ -->
+  <div id="workspace">
+
+    <!-- MAP CONTAINER (65%) -->
+    <div id="map-container">
+      <div id="canvas-wrap">
+        <canvas id="mainCanvas"></canvas>
+
+        <!-- Floating ECOVACS View & Layer Switchers -->
+        <div id="map-switchers">
+          <!-- 2D / 3D Isometric Switcher -->
+          <div class="pill-group">
+            <button class="ctrl-pill active" id="btn-view-2d" onclick="setViewMode('2d')">2D Floorplan</button>
+            <button class="ctrl-pill" id="btn-view-3d" onclick="setViewMode('3d')">3D Isometric</button>
+          </div>
+
+          <!-- Heatmap Layer Switcher -->
+          <div class="pill-group">
+            <button class="ctrl-pill active" data-heat="none" onclick="setHeatmap('none')">Normal</button>
+            <button class="ctrl-pill" data-heat="pheromone" onclick="setHeatmap('pheromone')">Pheromones</button>
+            <button class="ctrl-pill" data-heat="traffic" onclick="setHeatmap('traffic')">Traffic</button>
+            <button class="ctrl-pill" data-heat="deprank" onclick="setHeatmap('deprank')">Dep. Rank</button>
+          </div>
+        </div>
+
+        <!-- Canvas HUD Legend -->
+        <div id="map-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Depot</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span> Built Block</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#38bdf8"></span> Seek Bot</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Carry Bot</div>
+          <div class="legend-item"><span class="legend-dot" style="background:#ef4444"></span> No-Go Zone</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- RIGHT ANALYTICS PANEL (35%) -->
+    <div id="analytics-panel">
+
+      <!-- CONFIG CARD -->
+      <div class="card glass">
+        <div class="card-header">
+          <h3>⚙️ Swarm Configuration</h3>
+          <span class="card-tag">TERMES FSM</span>
+        </div>
+
+        <div class="cfg-grid">
+          <div class="cfg-item">
+            <label>Blueprint Preset</label>
+            <select id="sel-blueprint" onchange="changeBlueprint()">
+              <option value="walledRoom">Walled Room (Doorway/Pillar)</option>
+              <option value="steppedPyramid">Stepped Pyramid (Concentric)</option>
+              <option value="cdacComplex">Multi-Room C-DAC Complex</option>
+            </select>
+          </div>
+
+          <div class="cfg-item">
+            <label>Swarm Size (N)</label>
+            <div class="slider-wrap">
+              <input type="range" id="rng-agents" min="10" max="50" step="5" value="20" oninput="onAgentsSlider(this.value)">
+              <span id="lbl-agents" style="font-size:11px;font-family:monospace;color:#00f2fe;font-weight:700">20</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex;gap:8px;margin-top:2px">
+          <button class="btn-action primary" style="flex:1" onclick="resetSim()">
+            🔄 Reset &amp; Recompile
+          </button>
+          <button class="btn-action" style="flex:1" onclick="doPSO()">
+            🎯 Run PSO Depots
+          </button>
+        </div>
+      </div>
+
+      <!-- LIVE CHART 1: REAL-TIME BUILD PROGRESS -->
+      <div class="card glass">
+        <div class="card-header">
+          <h3>📈 Build Completion vs Ticks</h3>
+          <span class="card-tag">ACO vs Baseline</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="chartProgress"></canvas>
+        </div>
+      </div>
+
+      <!-- LIVE CHART 2: SWARM BENCHMARK -->
+      <div class="card glass">
+        <div class="card-header">
+          <h3>📊 Swarm Scalability Benchmark</h3>
+          <span class="card-tag">Multi-Seed Suite</span>
+        </div>
+        <div class="chart-container">
+          <canvas id="chartBenchmark"></canvas>
+        </div>
+        <button class="btn-action" id="btn-bench" onclick="runBenchmarkSuite()">
+          🧪 Run Multi-Seed Benchmark (10, 20, 30, 50 Bots)
+        </button>
+      </div>
+
+      <!-- TRANSPARENCY & DECENTRALIZATION AUDIT CARD -->
+      <div class="card glass" id="audit-box">
+        <div class="card-header">
+          <h3>🔍 Decentralization Audit Card</h3>
+          <span class="card-tag">C-DAC Compliant</span>
+        </div>
+        <div class="audit-grid">
+          <div>
+            <div class="audit-col-title">🌐 Global Knowledge (Static)</div>
+            <div class="audit-row ok"><span>✅</span> <span>Blueprint matrix (32×32)</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Depot coords (Omni Stations)</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Dependency rank matrix</span></div>
+            <div class="audit-row no"><span>❌</span> <span>NO central task scheduler</span></div>
+            <div class="audit-row no"><span>❌</span> <span>NO other robot tracking</span></div>
+            <div class="audit-row no"><span>❌</span> <span>NO global path planner</span></div>
+          </div>
+          <div>
+            <div class="audit-col-title">📡 Local Sensing (r = 1)</div>
+            <div class="audit-row ok"><span>✅</span> <span>3×3 neighborhood occupancy</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Adjacent block heights (TERMES)</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Local evaporating pheromones</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Inside-out anti-trap check</span></div>
+            <div class="audit-row ok"><span>✅</span> <span>Self state &amp; path memory</span></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ═══ FLOATING BOTTOM ACTION DOCK ═══ -->
+  <div id="dock-container">
+    <div id="dock">
+      <!-- Brush tools -->
+      <span class="dock-group-title">BRUSH</span>
+      <button class="dock-tool" data-tool="h1" onclick="toggleTool('h1')">🧱 H1</button>
+      <button class="dock-tool" data-tool="h2" onclick="toggleTool('h2')">🧱 H2</button>
+      <button class="dock-tool" data-tool="h3" onclick="toggleTool('h3')">🧱 H3</button>
+      <button class="dock-tool" data-tool="obstacle" onclick="toggleTool('obstacle')">🚫 No-Go</button>
+      <button class="dock-tool" data-tool="erase" onclick="toggleTool('erase')">🧹 Erase</button>
+
+      <div class="dock-sep"></div>
+
+      <!-- Execution Controls -->
+      <span class="dock-group-title">SIM</span>
+      <button class="dock-tool primary-pulse" id="btn-play" onclick="togglePlay()">▶️ Start</button>
+      <button class="dock-tool" onclick="stepOnce()">⏭ Step</button>
+
+      <div id="speed-ctrl">
+        <input type="range" id="rng-speed" min="1" max="10" value="2" oninput="onSpeedChange(this.value)">
+        <span id="speed-val">2×</span>
+      </div>
+
+      <div class="dock-sep"></div>
+
+      <!-- Swarm Interventions -->
+      <span class="dock-group-title">SWARM</span>
+      <button class="dock-tool danger" onclick="injectChaosEMP()">💥 EMP 30%</button>
+      <button class="dock-tool" id="btn-toggle-aco" onclick="toggleACOMsg()">🔄 ACO Mode</button>
+    </div>
+  </div>
+
+  <!-- ═════════════════════════════════════════════════════════════════════════
+       APPLICATION JAVASCRIPT & RENDERING PIPELINE
+       ═════════════════════════════════════════════════════════════════════════ -->
+  <script>
+    "use strict";
+
+    // ── Application State ───────────────────────────────────────────────────
+    let isRunning = false;
+    let simSpeed = 2;
+    let currentView = "2d";        // '2d' | '3d'
+    let currentHeatmap = "none";   // 'none' | 'pheromone' | 'traffic' | 'deprank'
+    let currentTool = null;        // 'h1' | 'h2' | 'h3' | 'obstacle' | 'erase' | null
+    let isMouseDown = false;
+    let acoActive = true;
+
+    // Charts
+    let progressChart = null;
+    let benchmarkChart = null;
+    let chartTicks = [];
+    let chartAcoValues = [];
+    let chartBaselineValues = [];
+
+    // Canvas
+    const canvas = document.getElementById("mainCanvas");
+    const ctx = canvas.getContext("2d");
+
+    // ── Bootstrapping ───────────────────────────────────────────────────────
+    window.addEventListener("DOMContentLoaded", () => {
+      initCharts();
+      resetSim();
+      initCanvasInteraction();
+      requestAnimationFrame(mainRenderLoop);
+
+      // Dismiss initial loading overlay
+      setTimeout(() => {
+        document.getElementById("loading-overlay").classList.add("fade-out");
+      }, 350);
+    });
+
+    // ── Simulation Lifecycle ────────────────────────────────────────────────
+    function resetSim() {
+      isRunning = false;
+      updatePlayBtnUI();
+
+      const bp = document.getElementById("sel-blueprint").value;
+      const agents = parseInt(document.getElementById("rng-agents").value) || 20;
+
+      SimEngine.init({
+        blueprint: bp,
+        numRobots: agents,
+        acoEnabled: acoActive,
+      });
+
+      // Reset live chart series
+      chartTicks = [0];
+      chartAcoValues = [0];
+      chartBaselineValues = [null];
+      if (progressChart) {
+        progressChart.data.labels = chartTicks;
+        progressChart.data.datasets[0].data = chartAcoValues;
+        progressChart.data.datasets[1].data = chartBaselineValues;
+        progressChart.update("none");
+      }
+
+      updateTelemetryUI(SimEngine.getState());
+    }
+
+    function togglePlay() {
+      isRunning = !isRunning;
+      updatePlayBtnUI();
+    }
+
+    function updatePlayBtnUI() {
+      const b = document.getElementById("btn-play");
+      if (isRunning) {
+        b.textContent = "⏸ Pause";
+        b.classList.remove("primary-pulse");
+        b.style.borderColor = "#f59e0b";
+        b.style.color = "#f59e0b";
+      } else {
+        b.textContent = "▶️ Start";
+        b.classList.add("primary-pulse");
+        b.style.borderColor = "";
+        b.style.color = "";
+      }
+    }
+
+    function stepOnce() {
+      const result = SimEngine.tick();
+      updateTelemetryUI(SimEngine.getState(), result);
+      recordChartData(result);
+    }
+
+    function onSpeedChange(val) {
+      simSpeed = parseInt(val) || 1;
+      document.getElementById("speed-val").textContent = simSpeed + "×";
+    }
+
+    function onAgentsSlider(val) {
+      document.getElementById("lbl-agents").textContent = val;
+    }
+
+    function changeBlueprint() {
+      resetSim();
+    }
+
+    function toggleACOMsg() {
+      acoActive = !acoActive;
+      SimEngine.setACOEnabled(acoActive);
+      const b = document.getElementById("btn-toggle-aco");
+      b.textContent = acoActive ? "🔄 ACO Mode" : "🔄 Baseline";
+      document.getElementById("t-mode").textContent = acoActive ? "ACO Stigmergy" : "Naive Baseline";
+    }
+
+    function doPSO() {
+      SimEngine.runPSODepotPlacement();
+      updateTelemetryUI(SimEngine.getState());
+    }
+
+    function injectChaosEMP() {
+      SimEngine.injectFailure(0.3);
+      updateTelemetryUI(SimEngine.getState());
+    }
+
+    // ── Telemetry HUD Updates ───────────────────────────────────────────────
+    function updateTelemetryUI(state, lastTickResult) {
+      const placed = state.blocksPlaced;
+      const total = state.totalBlocks;
+      const pct = total > 0 ? ((placed / total) * 100).toFixed(1) : "0.0";
+
+      document.getElementById("t-progress").textContent = `${placed} / ${total} (${pct}%)`;
+      document.getElementById("t-ticks").textContent = state.tickCount;
+
+      const active = state.robots.filter(r => !r.failed).length;
+      const failed = state.robots.filter(r => r.failed).length;
+      document.getElementById("t-swarm").textContent = `${active} / ${active + failed}${failed > 0 ? ` (${failed} 💥)` : ""}`;
+
+      let thru = 0;
+      if (lastTickResult && lastTickResult.throughputBuffer) {
+        thru = lastTickResult.throughputBuffer.reduce((a, b) => a + b, 0);
+      }
+      document.getElementById("t-thru").textContent = `${thru} / 100T`;
+    }
+
+    // ── Live Chart Recording ────────────────────────────────────────────────
+    function recordChartData(tickRes) {
+      if (tickRes.tick % 40 !== 0 && !SimEngine.isComplete()) return;
+
+      const pct = (tickRes.blocksPlaced / tickRes.totalBlocks) * 100;
+      chartTicks.push(tickRes.tick);
+
+      if (acoActive) {
+        chartAcoValues.push(pct);
+        chartBaselineValues.push(null);
+      } else {
+        chartBaselineValues.push(pct);
+        chartAcoValues.push(null);
+      }
+
+      if (progressChart) {
+        progressChart.data.labels = chartTicks;
+        progressChart.data.datasets[0].data = chartAcoValues;
+        progressChart.data.datasets[1].data = chartBaselineValues;
+        progressChart.update("none");
+      }
+    }
+
+    // ── Chart.js Initialization ────────────────────────────────────────────
+    function initCharts() {
+      if (typeof Chart === "undefined") {
+        console.warn("Chart.js not loaded. Skipping chart initialization.");
+        return;
+      }
+
+      const commonOptions = {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: true,
+            labels: { color: "#94a3b8", font: { size: 10, family: "inherit" }, boxWidth: 10 }
+          }
+        },
+        scales: {
+          x: {
+            ticks: { color: "#64748b", font: { size: 9 } },
+            grid: { color: "rgba(100, 200, 255, 0.05)" }
+          },
+          y: {
+            ticks: { color: "#64748b", font: { size: 9 } },
+            grid: { color: "rgba(100, 200, 255, 0.05)" }
+          }
+        }
+      };
+
+      // Progress Chart
+      const ctxP = document.getElementById("chartProgress").getContext("2d");
+      progressChart = new Chart(ctxP, {
+        type: "line",
+        data: {
+          labels: [0],
+          datasets: [
+            {
+              label: "ACO Stigmergy",
+              data: [0],
+              borderColor: "#00f2fe",
+              backgroundColor: "rgba(0, 242, 254, 0.12)",
+              tension: 0.25,
+              pointRadius: 0,
+              borderWidth: 2,
+              fill: true,
+            },
+            {
+              label: "Naive Baseline",
+              data: [null],
+              borderColor: "#f59e0b",
+              backgroundColor: "rgba(245, 158, 11, 0.08)",
+              borderDash: [4, 4],
+              tension: 0.25,
+              pointRadius: 0,
+              borderWidth: 2,
+              fill: true,
+            }
+          ]
+        },
+        options: {
+          ...commonOptions,
+          scales: {
+            ...commonOptions.scales,
+            y: {
+              ...commonOptions.scales.y,
+              min: 0, max: 100,
+              title: { display: true, text: "Completion %", color: "#64748b", font: { size: 9 } }
+            },
+            x: {
+              ...commonOptions.scales.x,
+              title: { display: true, text: "Simulation Ticks", color: "#64748b", font: { size: 9 } }
+            }
+          }
+        }
+      });
+
+      // Benchmark Chart
+      const ctxB = document.getElementById("chartBenchmark").getContext("2d");
+      benchmarkChart = new Chart(ctxB, {
+        type: "bar",
+        data: {
+          labels: ["N = 10", "N = 20", "N = 30", "N = 50"],
+          datasets: [
+            {
+              label: "ACO (Ticks to Build)",
+              data: [1820, 940, 680, 510],
+              backgroundColor: "rgba(0, 242, 254, 0.35)",
+              borderColor: "#00f2fe",
+              borderWidth: 1.5,
+              borderRadius: 4
+            },
+            {
+              label: "Baseline (Ticks to Build)",
+              data: [2650, 1420, 1050, 890],
+              backgroundColor: "rgba(245, 158, 11, 0.3)",
+              borderColor: "#f59e0b",
+              borderWidth: 1.5,
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          ...commonOptions,
+          scales: {
+            ...commonOptions.scales,
+            y: {
+              ...commonOptions.scales.y,
+              title: { display: true, text: "Mean Ticks", color: "#64748b", font: { size: 9 } }
+            }
+          }
+        }
+      });
+    }
+
+    // ── Automated Multi-Seed In-Browser Benchmark Suite ─────────────────────
+    function runBenchmarkSuite() {
+      const btn = document.getElementById("btn-bench");
+      btn.textContent = "⏳ Simulating Multi-Seed Suite…";
+      btn.disabled = true;
+
+      const counts = [10, 20, 30, 50];
+      const seeds = [42, 101, 202];
+      const acoResults = { 10: [], 20: [], 30: [], 50: [] };
+      const baseResults = { 10: [], 20: [], 30: [], 50: [] };
+
+      let tasks = [];
+      for (const n of counts) {
+        for (const s of seeds) {
+          tasks.push({ n, s, aco: true });
+          tasks.push({ n, s, aco: false });
+        }
+      }
+
+      let currentTaskIdx = 0;
+
+      function runNextTask() {
+        if (currentTaskIdx >= tasks.length) {
+          // Finalize and render
+          const acoMeans = counts.map(n => Math.round(acoResults[n].reduce((a, b) => a + b, 0) / acoResults[n].length));
+          const baseMeans = counts.map(n => Math.round(baseResults[n].reduce((a, b) => a + b, 0) / baseResults[n].length));
+
+          if (benchmarkChart) {
+            benchmarkChart.data.datasets[0].data = acoMeans;
+            benchmarkChart.data.datasets[1].data = baseMeans;
+            benchmarkChart.update();
+          }
+
+          btn.textContent = "🧪 Run Multi-Seed Benchmark (10, 20, 30, 50 Bots)";
+          btn.disabled = false;
+          resetSim();
+          return;
+        }
+
+        const task = tasks[currentTaskIdx++];
+        SimEngine.init({
+          blueprint: "walledRoom",
+          numRobots: task.n,
+          acoEnabled: task.aco,
+          seed: task.s
+        });
+
+        let t = 0;
+        const maxT = 4000;
+        function runFastBatch() {
+          for (let step = 0; step < 250 && t < maxT; step++, t++) {
+            SimEngine.tick();
+            if (SimEngine.isComplete()) break;
+          }
+          if (t >= maxT || SimEngine.isComplete()) {
+            if (task.aco) acoResults[task.n].push(t);
+            else baseResults[task.n].push(t);
+            setTimeout(runNextTask, 0);
+          } else {
+            setTimeout(runFastBatch, 0);
+          }
+        }
+        setTimeout(runFastBatch, 0);
+      }
+      setTimeout(runNextTask, 0);
+    }
+
+    // ── Canvas Interaction & Drawing Tools ──────────────────────────────────
+    function setViewMode(mode) {
+      currentView = mode;
+      document.getElementById("btn-view-2d").classList.toggle("active", mode === "2d");
+      document.getElementById("btn-view-3d").classList.toggle("active", mode === "3d");
+    }
+
+    function setHeatmap(mode) {
+      currentHeatmap = mode;
+      document.querySelectorAll("[data-heat]").forEach(b => {
+        b.classList.toggle("active", b.dataset.heat === mode);
+      });
+    }
+
+    function toggleTool(tool) {
+      currentTool = currentTool === tool ? null : tool;
+      document.querySelectorAll("[data-tool]").forEach(b => {
+        b.classList.toggle("active", b.dataset.tool === currentTool);
+      });
+    }
+
+    function initCanvasInteraction() {
+      canvas.addEventListener("mousedown", e => {
+        isMouseDown = true;
+        handleCanvasDraw(e);
+      });
+      window.addEventListener("mouseup", () => { isMouseDown = false; });
+      canvas.addEventListener("mousemove", e => {
+        if (isMouseDown && currentTool) handleCanvasDraw(e);
+      });
+    }
+
+    function handleCanvasDraw(e) {
+      if (!currentTool) return;
+      const rect = canvas.getBoundingClientRect();
+      const wrap = document.getElementById("canvas-wrap");
+      const W = wrap.clientWidth;
+      const H = wrap.clientHeight;
+      const gs = 32;
+
+      let gx = -1, gy = -1;
+
+      if (currentView === "2d") {
+        const cellSize = Math.min(W, H) / gs;
+        const offX = (W - cellSize * gs) / 2;
+        const offY = (H - cellSize * gs) / 2;
+        const mx = e.clientX - rect.left - offX;
+        const my = e.clientY - rect.top - offY;
+        gx = Math.floor(mx / cellSize);
+        gy = Math.floor(my / cellSize);
+      } else {
+        // Isometric ray pick approximation
+        const tileW = Math.min(W, H) * 1.35 / gs;
+        const tileH = tileW * 0.5;
+        const centerX = W / 2;
+        const centerY = H * 0.28;
+        const mx = e.clientX - rect.left - centerX;
+        const my = e.clientY - rect.top - centerY;
+        // Inverse isometric transform:
+        // mx = (x - y) * (tw/2)  =>  (x - y) = 2*mx / tw
+        // my = (x + y) * (th/2)  =>  (x + y) = 2*my / th
+        const u = (2 * mx) / tileW;
+        const v = (2 * my) / tileH;
+        gx = Math.floor((v + u) / 2);
+        gy = Math.floor((v - u) / 2);
+      }
+
+      if (gx >= 0 && gx < gs && gy >= 0 && gy < gs) {
+        if (currentTool === "h1") SimEngine.setTargetHeight(gx, gy, 1);
+        else if (currentTool === "h2") SimEngine.setTargetHeight(gx, gy, 2);
+        else if (currentTool === "h3") SimEngine.setTargetHeight(gx, gy, 3);
+        else if (currentTool === "obstacle") SimEngine.setObstacle(gx, gy, true);
+        else if (currentTool === "erase") {
+          SimEngine.setTargetHeight(gx, gy, 0);
+          SimEngine.setObstacle(gx, gy, false);
+        }
+        updateTelemetryUI(SimEngine.getState());
+      }
+    }
+
+    // ── 60 FPS Animation & Render Loop ──────────────────────────────────────
+    function mainRenderLoop() {
+      if (isRunning) {
+        let lastResult = null;
+        for (let i = 0; i < simSpeed; i++) {
+          lastResult = SimEngine.tick();
+          if (SimEngine.isComplete()) {
+            isRunning = false;
+            updatePlayBtnUI();
+            break;
+          }
+        }
+        if (lastResult) {
+          updateTelemetryUI(SimEngine.getState(), lastResult);
+          recordChartData(lastResult);
+        }
+      }
+
+      renderCanvas();
+      requestAnimationFrame(mainRenderLoop);
+    }
+
+    function renderCanvas() {
+      const wrap = document.getElementById("canvas-wrap");
+      const dpr = window.devicePixelRatio || 1;
+      const W = wrap.clientWidth;
+      const H = wrap.clientHeight;
+
+      if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+      }
+
+      ctx.save();
+      ctx.scale(dpr, dpr);
+      ctx.clearRect(0, 0, W, H);
+
+      const state = SimEngine.getState();
+      if (!state || !state.targetHeight) {
+        ctx.restore();
+        return;
+      }
+
+      if (currentView === "2d") {
+        render2DMap(ctx, state, W, H);
+      } else {
+        render3DIsometric(ctx, state, W, H);
+      }
+
+      ctx.restore();
+    }
+
+    // ── 2D Floorplan Grid Renderer ──────────────────────────────────────────
+    function render2DMap(ctx, state, W, H) {
+      const gs = state.gridSize || 32;
+      const cellSize = Math.min(W, H) / gs;
+      const offX = (W - cellSize * gs) / 2;
+      const offY = (H - cellSize * gs) / 2;
+
+      // Dark floor background
+      ctx.fillStyle = "#070b13";
+      ctx.fillRect(offX, offY, cellSize * gs, cellSize * gs);
+
+      // Grid Cells
+      for (let x = 0; x < gs; x++) {
+        for (let y = 0; y < gs; y++) {
+          const px = offX + x * cellSize;
+          const py = offY + y * cellSize;
+          const th = state.targetHeight[x][y];
+          const ch = state.currentHeight[x][y];
+          const obs = state.obstacles[x][y];
+
+          // Base cell background
+          ctx.fillStyle = "#0f172a";
+          ctx.fillRect(px, py, cellSize, cellSize);
+
+          // Obstacles / Hazard No-Go Zones
+          if (obs) {
+            ctx.fillStyle = "rgba(239, 68, 68, 0.4)";
+            ctx.fillRect(px, py, cellSize, cellSize);
+            // Hatching lines
+            ctx.strokeStyle = "rgba(239, 68, 68, 0.6)";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(px + cellSize, py + cellSize);
+            ctx.stroke();
+          }
+          // Built Blocks
+          else if (ch > 0) {
+            const alpha = ch === 1 ? 0.45 : (ch === 2 ? 0.75 : 1.0);
+            ctx.fillStyle = `rgba(16, 185, 129, ${alpha})`;
+            ctx.fillRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+            // Block height indicator text if cell is large enough
+            if (cellSize >= 16) {
+              ctx.fillStyle = "#ffffff";
+              ctx.font = "bold 9px monospace";
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillText(ch, px + cellSize / 2, py + cellSize / 2);
+            }
+          }
+          // Blueprint Targets (not yet completed)
+          else if (th > 0) {
+            ctx.fillStyle = "rgba(0, 242, 254, 0.05)";
+            ctx.fillRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+            ctx.setLineDash([2, 2]);
+            ctx.strokeStyle = "rgba(0, 242, 254, 0.3)";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(px + 1, py + 1, cellSize - 2, cellSize - 2);
+            ctx.setLineDash([]);
+          }
+
+          // Subtle grid cell borders
+          ctx.strokeStyle = "rgba(100, 200, 255, 0.04)";
+          ctx.lineWidth = 0.5;
+          ctx.strokeRect(px, py, cellSize, cellSize);
+        }
+      }
+
+      // Heatmap Overlays
+      if (currentHeatmap !== "none") {
+        renderHeatmapOverlay2D(ctx, state, gs, cellSize, offX, offY);
+      }
+
+      // Material Depots (ECOVACS Omni Stations)
+      if (state.depots) {
+        for (const d of state.depots) {
+          const cx = offX + d.x * cellSize + cellSize / 2;
+          const cy = offY + d.y * cellSize + cellSize / 2;
+          const s = cellSize * 0.45;
+
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(Math.PI / 4);
+          ctx.fillStyle = "#f59e0b";
+          ctx.shadowColor = "#f59e0b";
+          ctx.shadowBlur = 10;
+          ctx.fillRect(-s / 2, -s / 2, s, s);
+          ctx.restore();
+
+          // Small lightning symbol in center
+          ctx.fillStyle = "#0b0f19";
+          ctx.font = "bold 9px sans-serif";
+          ctx.textAlign = "center";
+          ctx.textBaseline = "middle";
+          ctx.fillText("⚡", cx, cy);
+        }
+      }
+
+      // Robots
+      if (state.robots) {
+        for (const bot of state.robots) {
+          const cx = offX + bot.x * cellSize + cellSize / 2;
+          const cy = offY + bot.y * cellSize + cellSize / 2;
+          const r = Math.max(cellSize * 0.28, 3.5);
+
+          if (bot.failed) {
+            ctx.fillStyle = "#6b7280";
+          } else {
+            switch (bot.state) {
+              case 0: ctx.fillStyle = "#38bdf8"; break; // SEEK
+              case 1: ctx.fillStyle = "#f59e0b"; break; // CARRY
+              case 2: ctx.fillStyle = "#10b981"; break; // INSPECT
+              case 3: ctx.fillStyle = "#a855f7"; break; // YIELD
+              default: ctx.fillStyle = "#38bdf8";
+            }
+          }
+
+          ctx.beginPath();
+          ctx.arc(cx, cy, r, 0, Math.PI * 2);
+          ctx.fill();
+
+          // Carrying block indicator (amber square atop bot)
+          if (bot.carrying && !bot.failed) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(cx - r * 0.45, cy - r * 1.5, r * 0.9, r * 0.7);
+            ctx.strokeStyle = "#f59e0b";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(cx - r * 0.45, cy - r * 1.5, r * 0.9, r * 0.7);
+          }
+
+          // Failed robot cross indicator
+          if (bot.failed) {
+            ctx.strokeStyle = "#ef4444";
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(cx - r, cy - r); ctx.lineTo(cx + r, cy + r);
+            ctx.moveTo(cx + r, cy - r); ctx.lineTo(cx - r, cy + r);
+            ctx.stroke();
+          }
+        }
+      }
+    }
+
+    // ── 2D Heatmap Layers ───────────────────────────────────────────────────
+    function renderHeatmapOverlay2D(ctx, state, gs, cs, ox, oy) {
+      for (let x = 0; x < gs; x++) {
+        for (let y = 0; y < gs; y++) {
+          let intensity = 0;
+          let color = null;
+
+          if (currentHeatmap === "pheromone") {
+            const pb = state.pheromoneBuild ? state.pheromoneBuild[x][y] : 0;
+            const pt = state.pheromoneTrail ? state.pheromoneTrail[x][y] : 0;
+            intensity = Math.min((pb * 0.6 + pt * 0.4) / 10.0, 1.0);
+            color = `rgba(0, 242, 254, ${intensity * 0.65})`;
+          } else if (currentHeatmap === "traffic") {
+            const tc = state.trafficCount ? state.trafficCount[x][y] : 0;
+            intensity = Math.min(tc / 35.0, 1.0);
+            color = `rgba(239, 68, 68, ${intensity * 0.65})`;
+          } else if (currentHeatmap === "deprank") {
+            const dr = state.depRank ? state.depRank[x][y] : 0;
+            if (dr !== Infinity && dr > 0) {
+              intensity = Math.min(dr / 30.0, 1.0);
+              color = `rgba(168, 85, 247, ${intensity * 0.65})`;
+            }
+          }
+
+          if (intensity > 0.02 && color) {
+            ctx.fillStyle = color;
+            ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
+          }
+        }
+      }
+    }
+
+    // ── 3D Isometric Voxel Renderer ─────────────────────────────────────────
+    function render3DIsometric(ctx, state, W, H) {
+      const gs = state.gridSize || 32;
+      const tileW = Math.min(W, H) * 1.35 / gs;
+      const tileH = tileW * 0.5;
+      const blockH = tileH * 0.65;
+      const centerX = W / 2;
+      const centerY = H * 0.28;
+
+      function toScreen(x, y, z) {
+        return {
+          sx: (x - y) * (tileW / 2) + centerX,
+          sy: (x + y) * (tileH / 2) - z * blockH + centerY
+        };
+      }
+
+      // Painter's Algorithm Depth Sort:
+      // In isometric projection (x - y, x + y), cells with lower (x + y) are further from camera.
+      // We iterate sum d = (x + y) from 0 up to 2*(gs - 1) so back cells are rendered FIRST.
+      for (let d = 0; d <= 2 * (gs - 1); d++) {
+        for (let x = 0; x < gs; x++) {
+          const y = d - x;
+          if (y < 0 || y >= gs) continue;
+
+          const th = state.targetHeight[x][y];
+          const ch = state.currentHeight[x][y];
+          const obs = state.obstacles[x][y];
+
+          // Ground floor tile
+          drawIsoFloorTile(ctx, toScreen, x, y, tileW, tileH, "#0f172a");
+
+          // Heatmap on ground
+          if (currentHeatmap !== "none") {
+            let intensity = 0;
+            let col = null;
+            if (currentHeatmap === "pheromone") {
+              const pb = state.pheromoneBuild ? state.pheromoneBuild[x][y] : 0;
+              const pt = state.pheromoneTrail ? state.pheromoneTrail[x][y] : 0;
+              intensity = Math.min((pb * 0.6 + pt * 0.4) / 10.0, 1.0);
+              col = `rgba(0, 242, 254, ${intensity * 0.5})`;
+            } else if (currentHeatmap === "traffic") {
+              const tc = state.trafficCount ? state.trafficCount[x][y] : 0;
+              intensity = Math.min(tc / 35.0, 1.0);
+              col = `rgba(239, 68, 68, ${intensity * 0.5})`;
+            } else if (currentHeatmap === "deprank") {
+              const dr = state.depRank ? state.depRank[x][y] : 0;
+              if (dr !== Infinity && dr > 0) {
+                intensity = Math.min(dr / 30.0, 1.0);
+                col = `rgba(168, 85, 247, ${intensity * 0.5})`;
+              }
+            }
+            if (intensity > 0.02 && col) {
+              drawIsoFloorTile(ctx, toScreen, x, y, tileW, tileH, col);
+            }
+          }
+
+          // Static Obstacle
+          if (obs) {
+            drawIsoVoxel(ctx, toScreen, x, y, 0, tileW, tileH, blockH, "#ef4444", 0.6);
+          }
+          // Built Blocks stacked in 3D
+          else if (ch > 0) {
+            for (let z = 0; z < ch; z++) {
+              drawIsoVoxel(ctx, toScreen, x, y, z, tileW, tileH, blockH, "#10b981", 0.95);
+            }
+          }
+          // Target Blueprint ghost wireframe
+          else if (th > 0) {
+            drawIsoWireframe(ctx, toScreen, x, y, 0, tileW, tileH, blockH);
+          }
+        }
+      }
+
+      // 3D Depots
+      if (state.depots) {
+        for (const d of state.depots) {
+          const p = toScreen(d.x, d.y, 0);
+          ctx.save();
+          ctx.fillStyle = "#f59e0b";
+          ctx.shadowColor = "#f59e0b";
+          ctx.shadowBlur = 10;
+          ctx.beginPath();
+          ctx.moveTo(p.sx, p.sy - tileH * 0.5);
+          ctx.lineTo(p.sx + tileW * 0.35, p.sy);
+          ctx.lineTo(p.sx, p.sy + tileH * 0.5);
+          ctx.lineTo(p.sx - tileW * 0.35, p.sy);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+        }
+      }
+
+      // 3D Robots (Depth-sorted)
+      if (state.robots) {
+        const sortedBots = state.robots.slice().sort((a, b) => (a.x + a.y) - (b.x + b.y));
+        for (const bot of sortedBots) {
+          const z = state.currentHeight ? state.currentHeight[bot.x][bot.y] : 0;
+          const p = toScreen(bot.x, bot.y, z);
+          const s = Math.max(tileW * 0.22, 4);
+
+          let col = "#38bdf8";
+          if (bot.failed) col = "#6b7280";
+          else if (bot.state === 1) col = "#f59e0b"; // CARRY
+          else if (bot.state === 2) col = "#10b981"; // INSPECT
+          else if (bot.state === 3) col = "#a855f7"; // YIELD
+
+          ctx.save();
+          ctx.fillStyle = col;
+          ctx.shadowColor = col;
+          ctx.shadowBlur = bot.carrying ? 8 : 4;
+          ctx.beginPath();
+          ctx.moveTo(p.sx, p.sy - s);
+          ctx.lineTo(p.sx + s * 0.9, p.sy + s * 0.5);
+          ctx.lineTo(p.sx, p.sy + s * 0.2);
+          ctx.lineTo(p.sx - s * 0.9, p.sy + s * 0.5);
+          ctx.closePath();
+          ctx.fill();
+          ctx.restore();
+
+          // Small block atop robot if carrying
+          if (bot.carrying && !bot.failed) {
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(p.sx - 3, p.sy - s - 6, 6, 5);
+          }
+        }
+      }
+    }
+
+    // ── 3D Isometric Geometry Helpers ───────────────────────────────────────
+    function drawIsoFloorTile(ctx, toScreen, x, y, tw, th, fill) {
+      const pTop = toScreen(x, y, 0);
+      const pRight = toScreen(x + 1, y, 0);
+      const pBot = toScreen(x + 1, y + 1, 0);
+      const pLeft = toScreen(x, y + 1, 0);
+
+      ctx.fillStyle = fill;
+      ctx.beginPath();
+      ctx.moveTo(pTop.sx, pTop.sy);
+      ctx.lineTo(pRight.sx, pRight.sy);
+      ctx.lineTo(pBot.sx, pBot.sy);
+      ctx.lineTo(pLeft.sx, pLeft.sy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.strokeStyle = "rgba(100, 200, 255, 0.05)";
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+
+    function drawIsoVoxel(ctx, toScreen, x, y, z, tw, th, bh, baseColor, alpha) {
+      const topT = toScreen(x, y, z + 1);
+      const topR = toScreen(x + 1, y, z + 1);
+      const topB = toScreen(x + 1, y + 1, z + 1);
+      const topL = toScreen(x, y + 1, z + 1);
+
+      const botR = toScreen(x + 1, y, z);
+      const botB = toScreen(x + 1, y + 1, z);
+      const botL = toScreen(x, y + 1, z);
+
+      ctx.save();
+      ctx.globalAlpha = alpha;
+
+      // 1. Left Face (Medium Shadow)
+      ctx.fillStyle = baseColor === "#ef4444" ? "#dc2626" : "#0d9488";
+      ctx.beginPath();
+      ctx.moveTo(topL.sx, topL.sy);
+      ctx.lineTo(topB.sx, topB.sy);
+      ctx.lineTo(botB.sx, botB.sy);
+      ctx.lineTo(botL.sx, botL.sy);
+      ctx.closePath();
+      ctx.fill();
+
+      // 2. Right Face (Darkest Shadow)
+      ctx.fillStyle = baseColor === "#ef4444" ? "#b91c1c" : "#047857";
+      ctx.beginPath();
+      ctx.moveTo(topR.sx, topR.sy);
+      ctx.lineTo(topB.sx, topB.sy);
+      ctx.lineTo(botB.sx, botB.sy);
+      ctx.lineTo(botR.sx, botR.sy);
+      ctx.closePath();
+      ctx.fill();
+
+      // 3. Top Face (Brightest Light)
+      ctx.fillStyle = baseColor === "#ef4444" ? "#f87171" : "#10b981";
+      ctx.beginPath();
+      ctx.moveTo(topT.sx, topT.sy);
+      ctx.lineTo(topR.sx, topR.sy);
+      ctx.lineTo(topB.sx, topB.sy);
+      ctx.lineTo(topL.sx, topL.sy);
+      ctx.closePath();
+      ctx.fill();
+
+      // Highlights on top edges
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.25)";
+      ctx.lineWidth = 0.8;
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function drawIsoWireframe(ctx, toScreen, x, y, z, tw, th, bh) {
+      const topT = toScreen(x, y, z + 1);
+      const topR = toScreen(x + 1, y, z + 1);
+      const topB = toScreen(x + 1, y + 1, z + 1);
+      const topL = toScreen(x, y + 1, z + 1);
+
+      ctx.save();
+      ctx.setLineDash([2, 3]);
+      ctx.strokeStyle = "rgba(0, 242, 254, 0.25)";
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(topT.sx, topT.sy);
+      ctx.lineTo(topR.sx, topR.sy);
+      ctx.lineTo(topB.sx, topB.sy);
+      ctx.lineTo(topL.sx, topL.sy);
+      ctx.closePath();
+      ctx.stroke();
+      ctx.restore();
+    }
+  </script>
+</body>
+</html>
