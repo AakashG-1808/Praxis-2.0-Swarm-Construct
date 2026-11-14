@@ -140,6 +140,12 @@ python -m http.server 8000
 
 #### UI Features:
 - **2D Floorplan & 3D Isometric Voxel View:** Instant toggle in the top-right corner with 3D depth lighting, stacked blocks, and robot wedges.
+- **Full Camera Pan, Zoom & 3D Orbit Rotation:**
+  - **Pan:** Left-click and drag across the canvas to pan across the construction site.
+  - **Zoom:** Mouse wheel smooth focal zoom (0.35× - 4.0×) centered at your cursor.
+  - **Rotate:** Rotate around the 3D structure across all 4 cardinal angles (0° Front, 90° Right, 180° Back, 270° Left) using top `↺` / `↻` buttons, keyboard shortcuts (`Q` / `E` / `R`), or **Shift + Drag** / **Right-Click Drag**. Inspect behind walls and into doorways from every perspective!
+  - **One-Click Re-Center:** `🎯 Center` button instantly restores position and 100% zoom.
+  - **Live Cell Inspector HUD:** Hovering over any cell reveals real-time coordinates `(X, Y)`, height `built / target`, robot occupants, evaporating pheromones, and dependency rank.
 - **Heatmap Layer Overlays:** Real-time overlays for **ACO Pheromone Trails** (Cyan Glow), **Traffic Congestion** (Red/Orange Heatmap), and **Dependency Ranks** (Purple Gradient).
 - **Interactive Map Brush Tools:** Click-and-drag directly on the live grid to draw Wall Heights (`H1`, `H2`, `H3`), create Hazard No-Go Zones (`🚫 No-Go`), or Erase cells.
 - **Swarm Controls:** Start/Pause, Step, Speed slider (1× - 10×), Run PSO Depot Optimizer, Inject 30% EMP Failure, Toggle ACO / Baseline.

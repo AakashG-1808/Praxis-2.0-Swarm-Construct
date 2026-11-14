@@ -138,26 +138,44 @@
       width: 100%;
       height: 100%;
       display: block;
-      cursor: crosshair;
+      cursor: grab;
     }
 
-    /* Floating Canvas Controls (ECOVACS Map Switcher Style) */
-    #map-top-controls {
+    /* Unified Responsive Map Header Bar */
+    #map-header-bar {
       position: absolute;
-      top: 14px;
-      left: 14px;
+      top: 10px;
+      left: 10px;
+      right: 10px;
       display: flex;
+      justify-content: space-between;
       align-items: center;
       gap: 8px;
-      z-index: 15;
+      z-index: 25;
+      pointer-events: none;
       flex-wrap: wrap;
     }
+    .map-bar-left, .map-bar-right {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      pointer-events: auto;
+      flex-wrap: wrap;
+    }
+    .bar-lbl {
+      font-size: 9.5px;
+      color: #94a3b8;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
     .top-select {
       background: rgba(11, 15, 25, 0.92);
       color: #00f2fe;
       border: 1px solid rgba(0, 242, 254, 0.35);
       border-radius: 999px;
-      padding: 4px 10px;
+      padding: 3px 8px;
       font-size: 11px;
       font-weight: 600;
       outline: none;
@@ -174,7 +192,7 @@
       color: #e2e8f0;
     }
     .top-action-btn {
-      padding: 4px 12px;
+      padding: 3px 10px;
       border-radius: 999px;
       font-size: 11px;
       font-weight: 700;
@@ -185,7 +203,7 @@
       transition: all 0.2s ease;
       display: flex;
       align-items: center;
-      gap: 5px;
+      gap: 4px;
       backdrop-filter: blur(12px);
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
     }
@@ -194,15 +212,6 @@
       box-shadow: 0 0 12px rgba(0, 242, 254, 0.5);
     }
 
-    #map-switchers {
-      position: absolute;
-      top: 14px;
-      right: 14px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-      z-index: 10;
-    }
     .pill-group {
       display: flex;
       background: rgba(15, 23, 42, 0.88);
@@ -213,7 +222,7 @@
       box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
     }
     .ctrl-pill {
-      padding: 4px 12px;
+      padding: 3px 10px;
       font-size: 11px;
       font-weight: 600;
       border: none;
@@ -229,6 +238,73 @@
       color: #00f2fe;
       box-shadow: 0 0 10px rgba(0, 242, 254, 0.3);
     }
+
+    /* Floating Cell Inspector HUD */
+    #cell-inspector {
+      position: absolute;
+      bottom: 12px;
+      right: 14px;
+      background: rgba(15, 23, 42, 0.92);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid rgba(0, 242, 254, 0.35);
+      border-radius: 8px;
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      font-size: 10.5px;
+      z-index: 15;
+      pointer-events: none;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.55);
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      opacity: 0;
+      transform: translateY(6px);
+      min-width: 195px;
+    }
+    #cell-inspector.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .inspect-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(100, 200, 255, 0.12);
+      padding-bottom: 4px;
+    }
+    .inspect-coord {
+      font-family: monospace;
+      font-size: 11px;
+      font-weight: 800;
+      color: #00f2fe;
+      letter-spacing: 0.5px;
+    }
+    .inspect-tag {
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.4px;
+    }
+    .inspect-tag.empty { background: rgba(100, 116, 139, 0.2); color: #94a3b8; }
+    .inspect-tag.target { background: rgba(0, 242, 254, 0.18); color: #00f2fe; border: 1px solid rgba(0, 242, 254, 0.3); }
+    .inspect-tag.done { background: rgba(16, 185, 129, 0.2); color: #10b981; border: 1px solid rgba(16, 185, 129, 0.4); }
+    .inspect-tag.obstacle { background: rgba(239, 68, 68, 0.2); color: #ef4444; border: 1px solid rgba(239, 68, 68, 0.4); }
+    .inspect-tag.depot { background: rgba(245, 158, 11, 0.2); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.4); }
+    .inspect-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3px 8px;
+    }
+    .insp-item {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+    }
+    .insp-k { color: #64748b; font-size: 9px; font-weight: 500; }
+    .insp-v { color: #e2e8f0; font-family: monospace; font-size: 10px; font-weight: 700; }
 
     /* Compass / Grid legend overlay */
     #map-legend {
@@ -574,51 +650,79 @@
       <div id="canvas-wrap">
         <canvas id="mainCanvas"></canvas>
 
-        <!-- Floating Top Controls: Blueprint Preset & Swarm Size (10-50) -->
-        <div id="map-top-controls">
-          <div class="pill-group" style="padding: 3px 8px; gap: 6px; align-items: center;">
-            <span style="font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Blueprint:</span>
-            <select id="top-sel-blueprint" class="top-select" onchange="onTopBlueprintChange(this.value)">
-              <option value="walledRoom" selected>Blueprint 1: Walled Room w/ Doorway (Constraint)</option>
-              <option value="steppedPyramid">Blueprint 2: Stepped Pyramid (3-Tier Simple)</option>
-              <option value="cdacComplex">Blueprint 3: Twin Bunker Complex</option>
-            </select>
+        <!-- Unified Responsive Top Map Control Bar -->
+        <div id="map-header-bar">
+          <div class="map-bar-left">
+            <div class="pill-group" style="padding: 2px 7px; gap: 4px; align-items: center;">
+              <span class="bar-lbl">Blueprint:</span>
+              <select id="top-sel-blueprint" class="top-select" onchange="onTopBlueprintChange(this.value)" style="max-width: 175px;">
+                <option value="walledRoom" selected>1: Walled Room</option>
+                <option value="steppedPyramid">2: Stepped Pyramid</option>
+                <option value="cdacComplex">3: Twin Bunker</option>
+              </select>
+            </div>
+
+            <div class="pill-group" style="padding: 2px 7px; gap: 4px; align-items: center;">
+              <span class="bar-lbl">Swarm:</span>
+              <select id="top-sel-agents" class="top-select" onchange="onTopAgentsChange(this.value)">
+                <option value="10">10 Bots</option>
+                <option value="20" selected>20 Bots</option>
+                <option value="30">30 Bots</option>
+                <option value="50">50 Bots</option>
+              </select>
+            </div>
+
+            <button class="top-action-btn" onclick="resetSim()" title="Recompile BFS wavefront and reset swarm">
+              🔄 Reset
+            </button>
           </div>
 
-          <div class="pill-group" style="padding: 3px 8px; gap: 6px; align-items: center;">
-            <span style="font-size: 10px; color: #94a3b8; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Swarm:</span>
-            <select id="top-sel-agents" class="top-select" onchange="onTopAgentsChange(this.value)">
-              <option value="10">10 Bots</option>
-              <option value="20" selected>20 Bots</option>
-              <option value="30">30 Bots</option>
-              <option value="50">50 Bots</option>
-            </select>
-          </div>
+          <div class="map-bar-right">
+            <div class="pill-group">
+              <button class="ctrl-pill active" id="btn-view-2d" onclick="setViewMode('2d')">2D Plan</button>
+              <button class="ctrl-pill" id="btn-view-3d" onclick="setViewMode('3d')">3D Iso</button>
+            </div>
 
-          <button class="top-action-btn" onclick="resetSim()" title="Recompile BFS wavefront and reset swarm">
-            🔄 Reset &amp; Recompile
-          </button>
+            <!-- Rotation 3D Orbit Controls -->
+            <div class="pill-group" style="padding: 2px 4px; gap: 2px; align-items: center;" title="Rotate View (Q / E / Shift+Drag)">
+              <button class="ctrl-pill" onclick="rotateView(-1)" title="Rotate Counter-Clockwise (Q or [)" style="padding: 2px 7px; font-size: 12px;">↺</button>
+              <span id="lbl-rotation" style="font-size: 10px; color: #00f2fe; font-family: monospace; font-weight: 700; min-width: 26px; text-align: center;">0°</span>
+              <button class="ctrl-pill" onclick="rotateView(1)" title="Rotate Clockwise (E or ])" style="padding: 2px 7px; font-size: 12px;">↻</button>
+            </div>
+
+            <div class="pill-group" style="padding: 2px 7px; gap: 4px; align-items: center;">
+              <span class="bar-lbl">Layer:</span>
+              <select id="top-sel-heatmap" class="top-select" onchange="setHeatmap(this.value)" style="border: none; background: transparent; padding: 2px 4px;">
+                <option value="none" selected>Normal</option>
+                <option value="pheromone">Pheromones</option>
+                <option value="traffic">Traffic</option>
+                <option value="deprank">Dep. Rank</option>
+              </select>
+            </div>
+
+            <button class="ctrl-pill" id="btn-recenter" onclick="resetCameraView()" title="Recenter View & Zoom (100%)" style="background: rgba(15, 23, 42, 0.9); border: 1px solid rgba(100, 200, 255, 0.25); color: #38bdf8; padding: 3px 9px; font-weight: 700;">
+              🎯 Center
+            </button>
+          </div>
         </div>
 
-        <!-- Floating ECOVACS View & Layer Switchers -->
-        <div id="map-switchers">
-          <!-- 2D / 3D Isometric Switcher -->
-          <div class="pill-group">
-            <button class="ctrl-pill active" id="btn-view-2d" onclick="setViewMode('2d')">2D Floorplan</button>
-            <button class="ctrl-pill" id="btn-view-3d" onclick="setViewMode('3d')">3D Isometric</button>
+        <!-- Floating Cell Inspector HUD -->
+        <div id="cell-inspector">
+          <div class="inspect-header">
+            <span class="inspect-coord" id="insp-coord">CELL (16, 16)</span>
+            <span class="inspect-tag target" id="insp-tag">TARGET</span>
           </div>
-
-          <!-- Heatmap Layer Switcher -->
-          <div class="pill-group">
-            <button class="ctrl-pill active" data-heat="none" onclick="setHeatmap('none')">Normal</button>
-            <button class="ctrl-pill" data-heat="pheromone" onclick="setHeatmap('pheromone')">Pheromones</button>
-            <button class="ctrl-pill" data-heat="traffic" onclick="setHeatmap('traffic')">Traffic</button>
-            <button class="ctrl-pill" data-heat="deprank" onclick="setHeatmap('deprank')">Dep. Rank</button>
+          <div class="inspect-grid">
+            <div class="insp-item"><span class="insp-k">Height</span><span class="insp-v" id="insp-height">1 / 2</span></div>
+            <div class="insp-item"><span class="insp-k">Robots</span><span class="insp-v" id="insp-bots">0</span></div>
+            <div class="insp-item"><span class="insp-k">Pheromone</span><span class="insp-v" id="insp-phero">0.00</span></div>
+            <div class="insp-item"><span class="insp-k">Dep. Rank</span><span class="insp-v" id="insp-dep">Rank 12</span></div>
           </div>
         </div>
 
-        <!-- Canvas HUD Legend -->
+        <!-- Canvas HUD Legend with Orientation Compass -->
         <div id="map-legend">
+          <div class="legend-item" style="color:#00f2fe; font-weight:700;"><span id="compass-icon">🧭</span> <span id="compass-val">Front (0°)</span></div>
           <div class="legend-item"><span class="legend-dot" style="background:#f59e0b"></span> Depot</div>
           <div class="legend-item"><span class="legend-dot" style="background:#10b981"></span> Built Block</div>
           <div class="legend-item"><span class="legend-dot" style="background:#38bdf8"></span> Seek Bot</div>
@@ -768,6 +872,21 @@
     let currentTool = null;        // 'h1' | 'h2' | 'h3' | 'obstacle' | 'erase' | null
     let isMouseDown = false;
     let acoActive = true;
+
+    // Camera Navigation & Hover Inspection State
+    let viewPanX = 0;
+    let viewPanY = 0;
+    let viewZoom = 1.0;
+    let viewRotation = 0; // 0: 0° (Front), 1: 90° (Right), 2: 180° (Back), 3: 270° (Left)
+    let isPanning = false;
+    let panStartX = 0;
+    let panStartY = 0;
+    let isRotDragging = false;
+    let rotStartX = 0;
+    let rotAccum = 0;
+    let hoverGx = -1;
+    let hoverGy = -1;
+    let isHoveringCanvas = false;
 
     // Charts
     let progressChart = null;
@@ -1148,6 +1267,8 @@
 
     function setHeatmap(mode) {
       currentHeatmap = mode;
+      const sel = document.getElementById("top-sel-heatmap");
+      if (sel && sel.value !== mode) sel.value = mode;
       document.querySelectorAll("[data-heat]").forEach(b => {
         b.classList.toggle("active", b.dataset.heat === mode);
       });
@@ -1158,53 +1279,232 @@
       document.querySelectorAll("[data-tool]").forEach(b => {
         b.classList.toggle("active", b.dataset.tool === currentTool);
       });
+      updateCursor();
     }
+
+    function updateCursor() {
+      if (currentTool) {
+        canvas.style.cursor = "crosshair";
+      } else if (isRotDragging) {
+        canvas.style.cursor = "ew-resize";
+      } else {
+        canvas.style.cursor = isPanning ? "grabbing" : "grab";
+      }
+    }
+
+    // ── 3D & 2D Rotation System ─────────────────────────────────────────────
+    function getRotatedGrid(x, y, rot) {
+      const gs = 32;
+      switch (((rot % 4) + 4) % 4) {
+        case 0: return { rx: x, ry: y };
+        case 1: return { rx: y, ry: gs - 1 - x };
+        case 2: return { rx: gs - 1 - x, ry: gs - 1 - y };
+        case 3: return { rx: gs - 1 - y, ry: x };
+      }
+    }
+
+    function getOriginalGrid(rx, ry, rot) {
+      const gs = 32;
+      switch (((rot % 4) + 4) % 4) {
+        case 0: return { x: rx, y: ry };
+        case 1: return { x: gs - 1 - ry, y: rx };
+        case 2: return { x: gs - 1 - rx, y: gs - 1 - ry };
+        case 3: return { x: ry, y: gs - 1 - rx };
+      }
+    }
+
+    const rotationLabels = ["0°", "90°", "180°", "270°"];
+    const rotationAngles = ["Front (0°)", "Right (90°)", "Back (180°)", "Left (270°)"];
+
+    function rotateView(dir) {
+      viewRotation = (((viewRotation + dir) % 4) + 4) % 4;
+      const lbl = document.getElementById("lbl-rotation");
+      if (lbl) lbl.textContent = rotationLabels[viewRotation];
+      const compass = document.getElementById("compass-val");
+      if (compass) compass.textContent = rotationAngles[viewRotation];
+    }
+
+    function resetCameraView() {
+      viewPanX = 0;
+      viewPanY = 0;
+      viewZoom = 1.0;
+      viewRotation = 0;
+      const lbl = document.getElementById("lbl-rotation");
+      if (lbl) lbl.textContent = "0°";
+      const compass = document.getElementById("compass-val");
+      if (compass) compass.textContent = "Front (0°)";
+    }
+
+    // Keyboard shortcuts for rotating (Q / E / R)
+    window.addEventListener("keydown", e => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "SELECT") return;
+      if (e.key === "q" || e.key === "Q" || e.key === "[") {
+        rotateView(-1);
+      } else if (e.key === "e" || e.key === "E" || e.key === "]" || e.key === "r" || e.key === "R") {
+        rotateView(1);
+      }
+    });
 
     function initCanvasInteraction() {
+      canvas.addEventListener("contextmenu", e => e.preventDefault());
+
       canvas.addEventListener("mousedown", e => {
-        isMouseDown = true;
-        handleCanvasDraw(e);
+        // Shift + Click or Right Click triggers horizontal rotate drag
+        if (e.button === 2 || (e.button === 0 && e.shiftKey)) {
+          isRotDragging = true;
+          rotStartX = e.clientX;
+          rotAccum = 0;
+          updateCursor();
+        }
+        // Left click with no tool or middle click triggers pan
+        else if (e.button === 1 || (e.button === 0 && !currentTool)) {
+          isPanning = true;
+          panStartX = e.clientX - viewPanX;
+          panStartY = e.clientY - viewPanY;
+          updateCursor();
+        }
+        // Left click with brush tool triggers drawing
+        else if (e.button === 0 && currentTool) {
+          isMouseDown = true;
+          handleCanvasDraw(e);
+        }
       });
-      window.addEventListener("mouseup", () => { isMouseDown = false; });
+
+      window.addEventListener("mouseup", () => {
+        isPanning = false;
+        isMouseDown = false;
+        isRotDragging = false;
+        updateCursor();
+      });
+
       canvas.addEventListener("mousemove", e => {
-        if (isMouseDown && currentTool) handleCanvasDraw(e);
+        isHoveringCanvas = true;
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        if (isRotDragging) {
+          const dx = e.clientX - rotStartX;
+          rotStartX = e.clientX;
+          rotAccum += dx;
+          if (Math.abs(rotAccum) >= 45) {
+            rotateView(rotAccum > 0 ? 1 : -1);
+            rotAccum = 0;
+          }
+        } else if (isPanning) {
+          viewPanX = e.clientX - panStartX;
+          viewPanY = e.clientY - panStartY;
+        } else {
+          const coords = getGridCoordsFromScreen(mx, my);
+          hoverGx = coords.gx;
+          hoverGy = coords.gy;
+
+          if (isMouseDown && currentTool) {
+            handleCanvasDraw(e);
+          }
+        }
       });
+
+      canvas.addEventListener("mouseleave", () => {
+        isHoveringCanvas = false;
+        isPanning = false;
+        isRotDragging = false;
+        hoverGx = -1;
+        hoverGy = -1;
+        const hud = document.getElementById("cell-inspector");
+        if (hud) hud.classList.remove("visible");
+        updateCursor();
+      });
+
+      canvas.addEventListener("wheel", e => {
+        e.preventDefault();
+        const zoomFactor = e.deltaY < 0 ? 1.12 : 0.89;
+        const newZoom = Math.max(0.35, Math.min(4.0, viewZoom * zoomFactor));
+
+        const rect = canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
+
+        // Smooth focal zoom centered at cursor position
+        viewPanX = mx - (mx - viewPanX) * (newZoom / viewZoom);
+        viewPanY = my - (my - viewPanY) * (newZoom / viewZoom);
+        viewZoom = newZoom;
+
+        const coords = getGridCoordsFromScreen(mx, my);
+        hoverGx = coords.gx;
+        hoverGy = coords.gy;
+      }, { passive: false });
     }
 
-    function handleCanvasDraw(e) {
-      if (!currentTool) return;
-      const rect = canvas.getBoundingClientRect();
+    function getGridCoordsFromScreen(mx, my) {
       const wrap = document.getElementById("canvas-wrap");
       const W = wrap.clientWidth;
       const H = wrap.clientHeight;
       const gs = 32;
 
-      let gx = -1, gy = -1;
-
       if (currentView === "2d") {
-        const cellSize = Math.min(W, H) / gs;
-        const offX = (W - cellSize * gs) / 2;
-        const offY = (H - cellSize * gs) / 2;
-        const mx = e.clientX - rect.left - offX;
-        const my = e.clientY - rect.top - offY;
-        gx = Math.floor(mx / cellSize);
-        gy = Math.floor(my / cellSize);
+        const baseCellSize = Math.min(W, H) / gs;
+        const cellSize = baseCellSize * viewZoom;
+        const offX = (W - cellSize * gs) / 2 + viewPanX;
+        const offY = (H - cellSize * gs) / 2 + viewPanY;
+        const rx = Math.floor((mx - offX) / cellSize);
+        const ry = Math.floor((my - offY) / cellSize);
+        if (rx >= 0 && rx < gs && ry >= 0 && ry < gs) {
+          const orig = getOriginalGrid(rx, ry, viewRotation);
+          return { gx: orig.x, gy: orig.y, z: 0 };
+        }
+        return { gx: -1, gy: -1, z: 0 };
       } else {
-        // Isometric ray pick approximation
-        const tileW = Math.min(W, H) * 1.35 / gs;
+        const baseTileW = (Math.min(W, H) * 1.35 / gs);
+        const tileW = baseTileW * viewZoom;
         const tileH = tileW * 0.5;
-        const centerX = W / 2;
-        const centerY = H * 0.28;
-        const mx = e.clientX - rect.left - centerX;
-        const my = e.clientY - rect.top - centerY;
-        // Inverse isometric transform:
-        // mx = (x - y) * (tw/2)  =>  (x - y) = 2*mx / tw
-        // my = (x + y) * (th/2)  =>  (x + y) = 2*my / th
-        const u = (2 * mx) / tileW;
-        const v = (2 * my) / tileH;
-        gx = Math.floor((v + u) / 2);
-        gy = Math.floor((v - u) / 2);
+        const blockH = tileH * 0.65;
+        const centerX = W / 2 + viewPanX;
+        const centerY = H * 0.28 + viewPanY;
+
+        const state = SimEngine.getState();
+        const curH = state ? state.currentHeight : null;
+
+        const relX = mx - centerX;
+        const u = (2 * relX) / tileW;
+
+        // Ray pick check for elevated voxel top surfaces (height z = 3 down to 1)
+        for (let z = 3; z >= 1; z--) {
+          const relY_z = (my - centerY) + z * blockH;
+          const v_z = (2 * relY_z) / tileH;
+          const testRx = Math.floor((v_z + u) / 2);
+          const testRy = Math.floor((v_z - u) / 2);
+          if (testRx >= 0 && testRx < gs && testRy >= 0 && testRy < gs) {
+            const orig = getOriginalGrid(testRx, testRy, viewRotation);
+            if (curH && curH[orig.x][orig.y] >= z) {
+              return { gx: orig.x, gy: orig.y, z: curH[orig.x][orig.y] };
+            }
+          }
+        }
+
+        // Ground level (z = 0)
+        const relY = my - centerY;
+        const v = (2 * relY) / tileH;
+        const testRx = Math.floor((v + u) / 2);
+        const testRy = Math.floor((v - u) / 2);
+        if (testRx >= 0 && testRx < gs && testRy >= 0 && testRy < gs) {
+          const orig = getOriginalGrid(testRx, testRy, viewRotation);
+          const z = (curH && orig.x >= 0 && orig.x < gs && orig.y >= 0 && orig.y < gs) ? curH[orig.x][orig.y] : 0;
+          return { gx: orig.x, gy: orig.y, z };
+        }
+        return { gx: -1, gy: -1, z: 0 };
       }
+    }
+
+    function handleCanvasDraw(e) {
+      if (!currentTool) return;
+      const rect = canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const coords = getGridCoordsFromScreen(mx, my);
+      const gx = coords.gx;
+      const gy = coords.gy;
+      const gs = 32;
 
       if (gx >= 0 && gx < gs && gy >= 0 && gy < gs) {
         if (currentTool === "h1") SimEngine.setTargetHeight(gx, gy, 1);
@@ -1268,25 +1568,150 @@
         render3DIsometric(ctx, state, W, H);
       }
 
+      // Draw interactive hover highlight & update HUD telemetry badge
+      renderHoverHighlight(ctx, state, W, H);
+      updateHoverHUD(state);
+
       ctx.restore();
+    }
+
+    function renderHoverHighlight(ctx, state, W, H) {
+      if (hoverGx < 0 || hoverGx >= 32 || hoverGy < 0 || hoverGy >= 32 || !isHoveringCanvas) return;
+
+      const gs = state.gridSize || 32;
+      const { rx, ry } = getRotatedGrid(hoverGx, hoverGy, viewRotation);
+
+      if (currentView === "2d") {
+        const baseCellSize = Math.min(W, H) / gs;
+        const cellSize = baseCellSize * viewZoom;
+        const offX = (W - cellSize * gs) / 2 + viewPanX;
+        const offY = (H - cellSize * gs) / 2 + viewPanY;
+        const px = offX + rx * cellSize;
+        const py = offY + ry * cellSize;
+
+        ctx.save();
+        ctx.strokeStyle = "#00f2fe";
+        ctx.lineWidth = Math.max(1.8, 2.2 * viewZoom);
+        ctx.shadowColor = "#00f2fe";
+        ctx.shadowBlur = 10;
+        ctx.strokeRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+        ctx.fillStyle = "rgba(0, 242, 254, 0.2)";
+        ctx.fillRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
+        ctx.restore();
+      } else {
+        const baseTileW = (Math.min(W, H) * 1.35 / gs);
+        const tileW = baseTileW * viewZoom;
+        const tileH = tileW * 0.5;
+        const blockH = tileH * 0.65;
+        const centerX = W / 2 + viewPanX;
+        const centerY = H * 0.28 + viewPanY;
+
+        function toScreen(x, y, z) {
+          return {
+            sx: (x - y) * (tileW / 2) + centerX,
+            sy: (x + y) * (tileH / 2) - z * blockH + centerY
+          };
+        }
+
+        const z = state.currentHeight ? state.currentHeight[hoverGx][hoverGy] : 0;
+        const pT = toScreen(rx, ry, z);
+        const pR = toScreen(rx + 1, ry, z);
+        const pB = toScreen(rx + 1, ry + 1, z);
+        const pL = toScreen(rx, ry + 1, z);
+
+        ctx.save();
+        ctx.strokeStyle = "#00f2fe";
+        ctx.lineWidth = Math.max(2, 2.5 * viewZoom);
+        ctx.shadowColor = "#00f2fe";
+        ctx.shadowBlur = 12;
+        ctx.beginPath();
+        ctx.moveTo(pT.sx, pT.sy);
+        ctx.lineTo(pR.sx, pR.sy);
+        ctx.lineTo(pB.sx, pB.sy);
+        ctx.lineTo(pL.sx, pL.sy);
+        ctx.closePath();
+        ctx.stroke();
+
+        ctx.fillStyle = "rgba(0, 242, 254, 0.25)";
+        ctx.fill();
+        ctx.restore();
+      }
+    }
+
+    function updateHoverHUD(state) {
+      const hud = document.getElementById("cell-inspector");
+      if (!hud) return;
+
+      if (hoverGx < 0 || hoverGx >= 32 || hoverGy < 0 || hoverGy >= 32 || !isHoveringCanvas) {
+        hud.classList.remove("visible");
+        return;
+      }
+
+      hud.classList.add("visible");
+      const x = hoverGx, y = hoverGy;
+      const th = state.targetHeight ? state.targetHeight[x][y] : 0;
+      const ch = state.currentHeight ? state.currentHeight[x][y] : 0;
+      const obs = state.obstacles ? state.obstacles[x][y] : false;
+      const isDepot = state.depots && state.depots.some(d => d.x === x && d.y === y);
+
+      let botStatus = "None";
+      if (state.robots) {
+        const botsHere = state.robots.filter(r => r.x === x && r.y === y);
+        if (botsHere.length > 0) {
+          const carrying = botsHere.some(r => r.carrying);
+          botStatus = `${botsHere.length} (${carrying ? "Carry" : "Seek"})`;
+        }
+      }
+
+      const pb = state.pheromoneBuild ? state.pheromoneBuild[x][y] : 0;
+      const pt = state.pheromoneTrail ? state.pheromoneTrail[x][y] : 0;
+      const dr = state.depRank ? state.depRank[x][y] : 0;
+
+      document.getElementById("insp-coord").textContent = `CELL (${x}, ${y})`;
+      const tagEl = document.getElementById("insp-tag");
+      if (obs) {
+        tagEl.className = "inspect-tag obstacle";
+        tagEl.textContent = "NO-GO";
+      } else if (isDepot) {
+        tagEl.className = "inspect-tag depot";
+        tagEl.textContent = "DEPOT";
+      } else if (ch >= th && th > 0) {
+        tagEl.className = "inspect-tag done";
+        tagEl.textContent = "BUILT";
+      } else if (th > 0) {
+        tagEl.className = "inspect-tag target";
+        tagEl.textContent = `TARGET (${ch}/${th})`;
+      } else {
+        tagEl.className = "inspect-tag empty";
+        tagEl.textContent = "EMPTY";
+      }
+
+      document.getElementById("insp-height").textContent = `${ch} / ${th}`;
+      document.getElementById("insp-bots").textContent = botStatus;
+      document.getElementById("insp-phero").textContent = `${pb.toFixed(1)} / ${pt.toFixed(1)}`;
+      document.getElementById("insp-dep").textContent = (dr !== Infinity && dr > 0) ? `Rank ${dr}` : "—";
     }
 
     // ── 2D Floorplan Grid Renderer ──────────────────────────────────────────
     function render2DMap(ctx, state, W, H) {
       const gs = state.gridSize || 32;
-      const cellSize = Math.min(W, H) / gs;
-      const offX = (W - cellSize * gs) / 2;
-      const offY = (H - cellSize * gs) / 2;
+      const baseCellSize = Math.min(W, H) / gs;
+      const cellSize = baseCellSize * viewZoom;
+      const offX = (W - cellSize * gs) / 2 + viewPanX;
+      const offY = (H - cellSize * gs) / 2 + viewPanY;
 
       // Dark floor background
       ctx.fillStyle = "#070b13";
       ctx.fillRect(offX, offY, cellSize * gs, cellSize * gs);
 
       // Grid Cells
-      for (let x = 0; x < gs; x++) {
-        for (let y = 0; y < gs; y++) {
-          const px = offX + x * cellSize;
-          const py = offY + y * cellSize;
+      for (let rx = 0; rx < gs; rx++) {
+        for (let ry = 0; ry < gs; ry++) {
+          const orig = getOriginalGrid(rx, ry, viewRotation);
+          const x = orig.x;
+          const y = orig.y;
+          const px = offX + rx * cellSize;
+          const py = offY + ry * cellSize;
           const th = state.targetHeight[x][y];
           const ch = state.currentHeight[x][y];
           const obs = state.obstacles[x][y];
@@ -1347,8 +1772,9 @@
       // Material Depots (ECOVACS Omni Stations)
       if (state.depots) {
         for (const d of state.depots) {
-          const cx = offX + d.x * cellSize + cellSize / 2;
-          const cy = offY + d.y * cellSize + cellSize / 2;
+          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation);
+          const cx = offX + rx * cellSize + cellSize / 2;
+          const cy = offY + ry * cellSize + cellSize / 2;
           const s = cellSize * 0.45;
 
           ctx.save();
@@ -1372,8 +1798,9 @@
       // Robots
       if (state.robots) {
         for (const bot of state.robots) {
-          const cx = offX + bot.x * cellSize + cellSize / 2;
-          const cy = offY + bot.y * cellSize + cellSize / 2;
+          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation);
+          const cx = offX + rx * cellSize + cellSize / 2;
+          const cy = offY + ry * cellSize + cellSize / 2;
           const r = Math.max(cellSize * 0.28, 3.5);
 
           if (bot.failed) {
@@ -1416,8 +1843,11 @@
 
     // ── 2D Heatmap Layers ───────────────────────────────────────────────────
     function renderHeatmapOverlay2D(ctx, state, gs, cs, ox, oy) {
-      for (let x = 0; x < gs; x++) {
-        for (let y = 0; y < gs; y++) {
+      for (let rx = 0; rx < gs; rx++) {
+        for (let ry = 0; ry < gs; ry++) {
+          const orig = getOriginalGrid(rx, ry, viewRotation);
+          const x = orig.x;
+          const y = orig.y;
           let intensity = 0;
           let color = null;
 
@@ -1440,7 +1870,7 @@
 
           if (intensity > 0.02 && color) {
             ctx.fillStyle = color;
-            ctx.fillRect(ox + x * cs, oy + y * cs, cs, cs);
+            ctx.fillRect(ox + rx * cs, oy + ry * cs, cs, cs);
           }
         }
       }
@@ -1449,11 +1879,12 @@
     // ── 3D Isometric Voxel Renderer ─────────────────────────────────────────
     function render3DIsometric(ctx, state, W, H) {
       const gs = state.gridSize || 32;
-      const tileW = Math.min(W, H) * 1.35 / gs;
+      const baseTileW = (Math.min(W, H) * 1.35 / gs);
+      const tileW = baseTileW * viewZoom;
       const tileH = tileW * 0.5;
       const blockH = tileH * 0.65;
-      const centerX = W / 2;
-      const centerY = H * 0.28;
+      const centerX = W / 2 + viewPanX;
+      const centerY = H * 0.28 + viewPanY;
 
       function toScreen(x, y, z) {
         return {
@@ -1463,19 +1894,22 @@
       }
 
       // Painter's Algorithm Depth Sort:
-      // In isometric projection (x - y, x + y), cells with lower (x + y) are further from camera.
-      // We iterate sum d = (x + y) from 0 up to 2*(gs - 1) so back cells are rendered FIRST.
+      // Along rotated viewing axis (rx + ry), cells with lower (rx + ry) are further from camera.
       for (let d = 0; d <= 2 * (gs - 1); d++) {
-        for (let x = 0; x < gs; x++) {
-          const y = d - x;
-          if (y < 0 || y >= gs) continue;
+        for (let rx = 0; rx < gs; rx++) {
+          const ry = d - rx;
+          if (ry < 0 || ry >= gs) continue;
+
+          const orig = getOriginalGrid(rx, ry, viewRotation);
+          const x = orig.x;
+          const y = orig.y;
 
           const th = state.targetHeight[x][y];
           const ch = state.currentHeight[x][y];
           const obs = state.obstacles[x][y];
 
           // Ground floor tile
-          drawIsoFloorTile(ctx, toScreen, x, y, tileW, tileH, "#0f172a");
+          drawIsoFloorTile(ctx, toScreen, rx, ry, tileW, tileH, "#0f172a");
 
           // Heatmap on ground
           if (currentHeatmap !== "none") {
@@ -1498,31 +1932,32 @@
               }
             }
             if (intensity > 0.02 && col) {
-              drawIsoFloorTile(ctx, toScreen, x, y, tileW, tileH, col);
+              drawIsoFloorTile(ctx, toScreen, rx, ry, tileW, tileH, col);
             }
           }
 
           // Static Obstacle
           if (obs) {
-            drawIsoVoxel(ctx, toScreen, x, y, 0, tileW, tileH, blockH, "#ef4444", 0.6);
+            drawIsoVoxel(ctx, toScreen, rx, ry, 0, tileW, tileH, blockH, "#ef4444", 0.6);
           }
           // Built Blocks stacked in 3D
           else if (ch > 0) {
             for (let z = 0; z < ch; z++) {
-              drawIsoVoxel(ctx, toScreen, x, y, z, tileW, tileH, blockH, "#10b981", 0.95);
+              drawIsoVoxel(ctx, toScreen, rx, ry, z, tileW, tileH, blockH, "#10b981", 0.95);
             }
           }
           // Target Blueprint ghost wireframe
           else if (th > 0) {
-            drawIsoWireframe(ctx, toScreen, x, y, 0, tileW, tileH, blockH);
+            drawIsoWireframe(ctx, toScreen, rx, ry, 0, tileW, tileH, blockH);
           }
         }
       }
 
-      // 3D Depots
+      // 3D Depots (rotated)
       if (state.depots) {
         for (const d of state.depots) {
-          const p = toScreen(d.x, d.y, 0);
+          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation);
+          const p = toScreen(rx, ry, 0);
           ctx.save();
           ctx.fillStyle = "#f59e0b";
           ctx.shadowColor = "#f59e0b";
@@ -1538,12 +1973,17 @@
         }
       }
 
-      // 3D Robots (Depth-sorted)
+      // 3D Robots (Depth-sorted along rotated depth rx + ry)
       if (state.robots) {
-        const sortedBots = state.robots.slice().sort((a, b) => (a.x + a.y) - (b.x + b.y));
-        for (const bot of sortedBots) {
+        const sortedBots = state.robots.map(bot => {
+          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation);
+          return { bot, rx, ry, depth: rx + ry };
+        }).sort((a, b) => a.depth - b.depth);
+
+        for (const item of sortedBots) {
+          const bot = item.bot;
           const z = state.currentHeight ? state.currentHeight[bot.x][bot.y] : 0;
-          const p = toScreen(bot.x, bot.y, z);
+          const p = toScreen(item.rx, item.ry, z);
           const s = Math.max(tileW * 0.22, 4);
 
           let col = "#38bdf8";
