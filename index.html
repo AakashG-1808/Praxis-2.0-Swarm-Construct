@@ -675,7 +675,7 @@
       max-width: 145px;
     }
 
-    /* ── CUSTOM BLUEPRINT / LOGO IMPORTER MODAL ─────────────────────── */
+    /* ── ARCHITECTURAL BLUEPRINT & CUSTOM IMPORTER MODAL ───────────── */
     #modal-blueprint-importer {
       position: fixed;
       inset: 0;
@@ -696,13 +696,18 @@
       border: 1px solid rgba(0, 242, 254, 0.35);
       border-radius: 12px;
       width: 100%;
-      max-width: 520px;
+      max-width: 860px;
+      max-height: 92vh;
+      overflow-y: auto;
       box-shadow: 0 10px 40px rgba(0, 0, 0, 0.8), 0 0 30px rgba(0, 242, 254, 0.2);
-      padding: 20px 24px;
+      padding: 18px 22px;
       display: flex;
       flex-direction: column;
-      gap: 14px;
+      gap: 12px;
     }
+    .modal-box::-webkit-scrollbar { width: 6px; }
+    .modal-box::-webkit-scrollbar-thumb { background: rgba(0, 242, 254, 0.25); border-radius: 3px; }
+
     .modal-header {
       display: flex;
       align-items: center;
@@ -726,23 +731,146 @@
       cursor: pointer;
     }
     .modal-close-btn:hover { color: #ef4444; }
-    .importer-preview-wrap {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      background: rgba(15, 23, 42, 0.8);
-      border: 1px dashed rgba(100, 200, 255, 0.25);
-      border-radius: 8px;
-      padding: 12px;
+
+    /* Side-by-side View */
+    .importer-split-view {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
     }
-    #previewCanvas {
-      width: 128px;
-      height: 128px;
+    .importer-panel {
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(100, 200, 255, 0.2);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+    }
+    .source-canvas-wrap, .preview-canvas-wrap {
+      width: 100%;
+      height: 230px;
+      background: #070b13;
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+      position: relative;
+    }
+    #sourceCanvas, #previewCanvas {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
       image-rendering: pixelated;
-      border: 1px solid rgba(0, 242, 254, 0.4);
-      background: #000;
+      cursor: crosshair;
+    }
+    .transform-bar {
+      display: flex;
+      gap: 4px;
+      align-items: center;
+      flex-wrap: wrap;
+      font-size: 10px;
+      color: #94a3b8;
+    }
+    .mini-btn {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(100, 200, 255, 0.3);
+      color: #38bdf8;
       border-radius: 4px;
-      flex-shrink: 0;
+      padding: 2px 7px;
+      font-size: 10px;
+      cursor: pointer;
+      font-weight: 600;
+    }
+    .mini-btn:hover {
+      background: rgba(0, 242, 254, 0.2);
+      color: #00f2fe;
+    }
+    .editor-tool-group {
+      display: flex;
+      gap: 4px;
+    }
+    .editor-tool {
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid rgba(100, 200, 255, 0.25);
+      color: #94a3b8;
+      padding: 2px 8px;
+      font-size: 10px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .editor-tool.active {
+      background: rgba(0, 242, 254, 0.25);
+      border-color: #00f2fe;
+      color: #00f2fe;
+    }
+
+    /* Controls 3-Column Grid */
+    .importer-controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid rgba(100, 200, 255, 0.15);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .ctrl-col {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .ctrl-label {
+      font-size: 10px;
+      font-weight: 600;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .chk-label {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 10px;
+      color: #94a3b8;
+      cursor: pointer;
+    }
+    .diag-banner {
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 11px;
+      line-height: 1.4;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+    .diag-banner.ok {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+    .diag-banner.warning {
+      background: rgba(245, 158, 11, 0.15);
+      border: 1px solid rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+    }
+    .diag-banner.error {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #f87171;
     }
   </style>
 </head>
@@ -754,44 +882,156 @@
     <div class="loading-msg">COMPILING BLUEPRINT BFS WAVEFRONT…</div>
   </div>
 
-  <!-- CUSTOM BLUEPRINT / LOGO IMPORTER MODAL -->
+  <!-- ARCHITECTURAL BLUEPRINT & CUSTOM PLAN IMPORTER MODAL -->
   <div id="modal-blueprint-importer">
     <div class="modal-box">
       <div class="modal-header">
-        <h2>🎨 Custom Blueprint / Logo Importer</h2>
+        <h2>📐 Architectural Floor-Plan &amp; Blueprint Importer</h2>
         <button class="modal-close-btn" onclick="closeCustomBlueprintModal()">✕</button>
       </div>
 
-      <p style="font-size: 11px; color: #94a3b8; line-height: 1.5; margin: 0;">
-        Upload an image (PNG / JPG) or select a block-typography preset. It will automatically convert to a 32×32 2.5D heightmap and recompile the decentralized BFS wavefront.
-      </p>
-
-      <div style="display: flex; gap: 8px;">
-        <button class="btn-action primary" style="flex: 1; padding: 6px;" onclick="loadLogoPreset('cdacLogo')">
-          🏛️ Load "C-DAC" Logo Preset
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <button class="btn-action primary" style="flex: 1; min-width: 150px; padding: 6px;" onclick="loadLogoPreset('apartmentPlan')">
+          🏡 Load Sample Floor-Plan
         </button>
-        <button class="btn-action" style="flex: 1; padding: 6px;" onclick="loadLogoPreset('pesLogo')">
-          🎓 Load "PES" Logo Preset
+        <button class="btn-action" style="flex: 1; min-width: 140px; padding: 6px;" onclick="loadLogoPreset('cdacLogo')">
+          🏛️ Load "C-DAC" Logo
+        </button>
+        <button class="btn-action" style="flex: 1; min-width: 140px; padding: 6px;" onclick="loadLogoPreset('pesLogo')">
+          🎓 Load "PES" Logo
         </button>
       </div>
 
-      <div class="importer-preview-wrap">
-        <canvas id="previewCanvas" width="32" height="32"></canvas>
-        <div style="display: flex; flex-direction: column; gap: 6px; flex: 1;">
-          <label style="font-size: 11px; font-weight: 600; color: #e2e8f0;">Upload Custom Image / Logo:</label>
-          <input type="file" id="input-blueprint-file" accept="image/*" onchange="onBlueprintFileSelected(this.files[0])" style="font-size: 11px; color: #94a3b8;">
-          
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-top: 4px;">
-            <label style="font-size: 10px; color: #94a3b8;">Height Threshold:</label>
-            <input type="range" id="rng-threshold" min="30" max="220" value="128" oninput="onThresholdChange(this.value)" style="width: 110px; accent-color: #00f2fe;">
+      <!-- Side-by-side View: Source Image vs Converted Grid -->
+      <div class="importer-split-view">
+        <!-- Left Panel: Source Floor-Plan & Positioning Controls -->
+        <div class="importer-panel">
+          <div class="panel-header">
+            <span>📷 Source Image / CAD Plan</span>
+            <span id="src-dim-label" style="font-family: monospace; color: #00f2fe; font-size: 10px;">Ready</span>
           </div>
-          
-          <label style="display: flex; align-items: center; gap: 6px; font-size: 10px; color: #94a3b8; cursor: pointer;">
-            <input type="checkbox" id="chk-invert-image" onchange="onInvertChange(this.checked)" style="accent-color: #00f2fe;">
-            <span>Invert White/Black (Building footprint)</span>
+
+          <div class="source-canvas-wrap">
+            <canvas id="sourceCanvas" width="280" height="230"></canvas>
+          </div>
+
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <input type="file" id="input-blueprint-file" accept="image/*" onchange="onBlueprintFileSelected(this.files[0])" style="font-size: 10px; color: #94a3b8; flex: 1;">
+          </div>
+
+          <div class="transform-bar">
+            <span>Position / Crop:</span>
+            <button class="mini-btn" onclick="adjustPlanPan(-4, 0)" title="Pan Left">◀</button>
+            <button class="mini-btn" onclick="adjustPlanPan(4, 0)" title="Pan Right">▶</button>
+            <button class="mini-btn" onclick="adjustPlanPan(0, -4)" title="Pan Up">▲</button>
+            <button class="mini-btn" onclick="adjustPlanPan(0, 4)" title="Pan Down">▼</button>
+            <button class="mini-btn" onclick="adjustPlanZoom(1.1)" title="Zoom In">🔍+</button>
+            <button class="mini-btn" onclick="adjustPlanZoom(0.9)" title="Zoom Out">🔍-</button>
+            <button class="mini-btn" onclick="rotatePlan(1)" title="Rotate Clockwise 90°">↻ 90°</button>
+            <button class="mini-btn" onclick="resetPlanTransform()" title="Recenter Image">🎯 Center</button>
+          </div>
+        </div>
+
+        <!-- Right Panel: Converted Blueprint Grid & Interactive Editor -->
+        <div class="importer-panel">
+          <div class="panel-header">
+            <span>🏗️ Converted Simulator Grid</span>
+            <div class="editor-tool-group">
+              <button class="editor-tool active" id="btn-tool-draw" onclick="setPreviewTool('draw')" title="Paint Wall Cell">✏️ Wall</button>
+              <button class="editor-tool" id="btn-tool-open" onclick="setPreviewTool('open')" title="Carve Door / Window Opening">🚪 Door</button>
+              <button class="editor-tool" id="btn-tool-erase" onclick="setPreviewTool('erase')" title="Erase Cell">🧹 Erase</button>
+            </div>
+          </div>
+
+          <div class="preview-canvas-wrap">
+            <canvas id="previewCanvas" width="48" height="48"></canvas>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; font-size: 10px; color: #94a3b8; font-family: monospace;">
+            <span id="preview-hover-info">Hover cell: (—, —)</span>
+            <span id="importer-dim-badge" style="color: #00f2fe; font-weight: 700;">📐 Grid: 48×48</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Controls 3-Column Grid -->
+      <div class="importer-controls-grid">
+        <!-- Col 1: Parsing Engine & Threshold -->
+        <div class="ctrl-col">
+          <label class="ctrl-label">Conversion Engine:</label>
+          <select id="sel-importer-mode" class="top-select" onchange="onImporterModeChange(this.value)" style="width: 100%; padding: 3px 6px;">
+            <option value="architectural" selected>📐 Architectural Floor Plan (Walls + Rooms)</option>
+            <option value="solid">🖼️ Solid Logo / Heightmap (Raw Brightness)</option>
+          </select>
+
+          <label class="ctrl-label" style="margin-top: 4px;">
+            <span>Wall Contrast Threshold:</span>
+            <span id="val-threshold" style="color:#00f2fe; font-family: monospace;">128</span>
+          </label>
+          <input type="range" id="rng-threshold" min="20" max="235" value="128" oninput="onThresholdChange(this.value)" style="width: 100%; accent-color: #00f2fe;">
+
+          <label class="chk-label" style="margin-top: 4px;">
+            <input type="checkbox" id="chk-invert-image" checked onchange="onInvertChange(this.checked)" style="accent-color: #00f2fe;">
+            <span>Dark Walls on White Paper (Standard Floor Plan)</span>
+          </label>
+        </div>
+
+        <!-- Col 2: Architectural Filtering & Wall Properties -->
+        <div class="ctrl-col">
+          <label class="ctrl-label">Target Wall Height:</label>
+          <div class="pill-group" style="padding: 2px 4px; gap: 4px;">
+            <button class="ctrl-pill" id="btn-wh-1" onclick="setWallHeight(1)">H1</button>
+            <button class="ctrl-pill active" id="btn-wh-2" onclick="setWallHeight(2)">H2 (Default)</button>
+            <button class="ctrl-pill" id="btn-wh-3" onclick="setWallHeight(3)">H3</button>
+          </div>
+
+          <label class="ctrl-label" style="margin-top: 4px;">
+            <span>Filter Text &amp; Dimensions:</span>
+            <span id="val-noise-filter" style="color:#f59e0b; font-family: monospace;">6 px</span>
+          </label>
+          <input type="range" id="rng-noise-filter" min="0" max="25" value="6" oninput="onNoiseFilterChange(this.value)" style="width: 100%; accent-color: #f59e0b;" title="Removes isolated room labels, dimension numbers, and tick marks">
+
+          <label class="ctrl-label" style="margin-top: 4px;">Wall Line Thickness:</label>
+          <select id="sel-wall-thickness" class="top-select" onchange="onWallThicknessChange(this.value)" style="width: 100%; padding: 3px 6px;">
+            <option value="auto" selected>Auto Adaptive</option>
+            <option value="thin">Thin (1 Cell Wide Skeleton)</option>
+            <option value="thick">Thick (2 Cells Reinforced)</option>
+          </select>
+        </div>
+
+        <!-- Col 3: Grid Resolution & Layout -->
+        <div class="ctrl-col">
+          <label class="ctrl-label">Grid Resolution:</label>
+          <select id="sel-importer-res" class="top-select" onchange="onImporterResChange(this.value)" style="width: 100%; padding: 3px 6px;">
+            <option value="32">32 px (Standard)</option>
+            <option value="40">40 px (Medium)</option>
+            <option value="48" selected>48 px (High Res)</option>
+            <option value="64">64 px (Ultra Res)</option>
+          </select>
+
+          <label class="chk-label" style="margin-top: 6px;">
+            <input type="checkbox" id="chk-autofit-aspect" checked onchange="onAutoFitChange(this.checked)" style="accent-color: #00f2fe;">
+            <span>Preserve Aspect Ratio (Square/Rectangle)</span>
+          </label>
+
+          <label class="chk-label" style="margin-top: 4px;">
+            <input type="checkbox" id="chk-filled-floor" onchange="onFilledFloorChange(this.checked)" style="accent-color: #00f2fe;">
+            <span>Filled Floor Slab (Level 1 base under rooms)</span>
           </label>
         </div>
       </div>
+
+      <!-- Validation & Quality Diagnostics Banner -->
+      <div id="importer-diagnostics" class="diag-banner ok">
+        <span>🔍 Scanning layout reachability…</span>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
+        <button class="btn-action" onclick="closeCustomBlueprintModal()">Cancel</button>
+        <button class="btn-action primary" id="btn-apply-blueprint" onclick="applyCustomBlueprint()">🚀 Apply &amp; Recompile Swarm</button>
+      </div>
+    </div>
+  </div>
 
       <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
         <button class="btn-action" onclick="closeCustomBlueprintModal()">Cancel</button>
@@ -867,6 +1107,17 @@
                 <option value="20" selected>20 Bots</option>
                 <option value="30">30 Bots</option>
                 <option value="50">50 Bots</option>
+              </select>
+            </div>
+
+            <div class="pill-group" style="padding: 2px 7px; gap: 4px; align-items: center;">
+              <span class="bar-lbl">Grid:</span>
+              <select id="top-sel-gridsize" class="top-select" onchange="onGridSizeChange(this.value)" style="max-width: 130px;">
+                <option value="32" selected>32×32 (Std)</option>
+                <option value="40">40×40 (Med)</option>
+                <option value="48">48×48 (High)</option>
+                <option value="64">64×64 (Ultra)</option>
+                <option value="custom" id="top-opt-grid-custom" style="display:none;">Auto Fit</option>
               </select>
             </div>
 
@@ -1209,6 +1460,20 @@
       resetSim();
     }
 
+    function onGridSizeChange(val) {
+      if (val === "custom") {
+        if (customBlueprintGrid) {
+          applyCustomBlueprint();
+        } else {
+          openCustomBlueprintModal();
+        }
+        return;
+      }
+      const sz = parseInt(val) || 32;
+      SimEngine.setGridDimensions(sz, sz);
+      resetSim();
+    }
+
     function resetSim() {
       isRunning = false;
       updatePlayBtnUI();
@@ -1222,13 +1487,28 @@
       const topAg = document.getElementById("top-sel-agents");
       if (topAg && topAg.value !== String(agents)) topAg.value = String(agents);
 
+      const gzSelect = document.getElementById("top-sel-gridsize");
+      let gw = 32, gh = 32;
       if (bp !== "custom") {
         customBlueprintGrid = null;
+        if (gzSelect && gzSelect.value === "custom") {
+          gzSelect.value = "32";
+          const customOpt = document.getElementById("top-opt-grid-custom");
+          if (customOpt) customOpt.style.display = "none";
+        }
+        const sz = gzSelect && gzSelect.value !== "custom" ? (parseInt(gzSelect.value) || 32) : 32;
+        gw = sz;
+        gh = sz;
+      } else if (customBlueprintGrid) {
+        gw = customBlueprintGrid.length;
+        gh = customBlueprintGrid[0].length;
       }
 
       SimEngine.init({
         blueprint: (bp === "custom" && customBlueprintGrid) ? "custom" : bp,
         customHeightmap: bp === "custom" ? customBlueprintGrid : null,
+        gridWidth: gw,
+        gridHeight: gh,
         numRobots: agents,
         acoEnabled: acoActive,
       });
@@ -1321,13 +1601,16 @@
     // ── Disaster Breach & Self-Healing ──────────────────────────────────────
     function triggerDisasterCollapse() {
       const state = SimEngine.getState();
-      let targetX = 16, targetY = 16;
+      const gw = state.gridWidth || 32;
+      const gh = state.gridHeight || 32;
+      let targetX = Math.floor(gw / 2), targetY = Math.floor(gh / 2);
       let found = false;
-      for (let r = 0; r < 14 && !found; r++) {
+      const maxR = Math.max(gw, gh);
+      for (let r = 0; r < maxR && !found; r++) {
         for (let dx = -r; dx <= r && !found; dx++) {
           for (let dy = -r; dy <= r && !found; dy++) {
-            const x = 16 + dx, y = 16 + dy;
-            if (x >= 0 && x < 32 && y >= 0 && y < 32 && state.currentHeight[x][y] > 0) {
+            const x = targetX + dx, y = targetY + dy;
+            if (x >= 0 && x < gw && y >= 0 && y < gh && state.currentHeight[x] && state.currentHeight[x][y] > 0) {
               targetX = x; targetY = y;
               found = true;
             }
@@ -1469,114 +1752,686 @@
       }
     }
 
-    // ── Custom Image & Logo Blueprint Importer ──────────────────────────────
+    // ── Architectural Floor-Plan & Custom Blueprint Importer ────────────────
+    let importerMaxRes = 48;
+    let autoFitAspect = true;
+    let lastPresetName = "apartmentPlan";
+    let importerMode = "architectural"; // 'architectural' | 'solid'
+    let wallHeight = 2;
+    let wallThickness = "auto";         // 'auto' | 'thin' | 'thick'
+    let noiseFilterSize = 6;            // Remove isolated text/dimension marks <= 6 px
+    let filledFloorMode = false;
+    let planPanX = 0;
+    let planPanY = 0;
+    let planScale = 1.0;
+    let planRotation = 0;               // 0, 1, 2, 3 (* 90°)
+    let previewEditorTool = "draw";     // 'draw' | 'open' | 'erase'
+    let doorOpenings = [];              // Array of { x, y }
+    let lastUploadedImg = null;
+    let isDrawingOnPreview = false;
+    let diagnosticsReport = { wallCells: 0, openings: 0, unreachable: 0, isNavigable: true, warnings: [] };
+
     function openCustomBlueprintModal() {
-      document.getElementById("modal-blueprint-importer").classList.add("visible");
-      if (!customBlueprintGrid) {
-        loadLogoPreset("cdacLogo");
+      const modal = document.getElementById("modal-blueprint-importer");
+      if (modal) modal.classList.add("visible");
+      initPreviewCanvasEditor();
+      if (!lastUploadedImg && !customBlueprintGrid) {
+        loadLogoPreset("apartmentPlan");
       } else {
-        renderPreviewCanvas(customBlueprintGrid);
+        updateImporterView();
       }
     }
 
     function closeCustomBlueprintModal() {
-      document.getElementById("modal-blueprint-importer").classList.remove("visible");
+      const modal = document.getElementById("modal-blueprint-importer");
+      if (modal) modal.classList.remove("visible");
     }
 
-    function loadLogoPreset(name) {
-      if (name === "pesLogo") {
-        customBlueprintGrid = SimEngine.pesLogoBlueprint();
-      } else {
-        customBlueprintGrid = SimEngine.cdacLogoBlueprint();
-      }
-      renderPreviewCanvas(customBlueprintGrid);
+    function setPreviewTool(tool) {
+      previewEditorTool = tool;
+      document.querySelectorAll(".editor-tool").forEach(b => b.classList.remove("active"));
+      const btn = document.getElementById(`btn-tool-${tool}`);
+      if (btn) btn.classList.add("active");
+    }
+
+    function setWallHeight(h) {
+      wallHeight = Math.max(1, Math.min(3, parseInt(h) || 2));
+      document.querySelectorAll("#btn-wh-1, #btn-wh-2, #btn-wh-3").forEach(b => b.classList.remove("active"));
+      const btn = document.getElementById(`btn-wh-${wallHeight}`);
+      if (btn) btn.classList.add("active");
+      updateImporterView();
+    }
+
+    function onImporterModeChange(mode) {
+      importerMode = mode;
+      updateImporterView();
+    }
+
+    function onNoiseFilterChange(val) {
+      noiseFilterSize = parseInt(val) || 0;
+      const lbl = document.getElementById("val-noise-filter");
+      if (lbl) lbl.textContent = `${noiseFilterSize} px`;
+      updateImporterView();
+    }
+
+    function onWallThicknessChange(val) {
+      wallThickness = val;
+      updateImporterView();
+    }
+
+    function onFilledFloorChange(checked) {
+      filledFloorMode = checked;
+      updateImporterView();
     }
 
     function onThresholdChange(val) {
       thresholdValue = parseInt(val) || 128;
-      if (lastUploadedImg) {
-        processImgToGrid(lastUploadedImg);
-      }
+      const lbl = document.getElementById("val-threshold");
+      if (lbl) lbl.textContent = thresholdValue;
+      updateImporterView();
     }
 
     function onInvertChange(checked) {
       invertImageBlueprint = checked;
-      if (lastUploadedImg) {
-        processImgToGrid(lastUploadedImg);
-      }
+      updateImporterView();
     }
 
-    let lastUploadedImg = null;
+    function onImporterResChange(val) {
+      importerMaxRes = parseInt(val) || 48;
+      updateImporterView();
+    }
+
+    function onAutoFitChange(checked) {
+      autoFitAspect = checked;
+      updateImporterView();
+    }
+
+    // Interactive Pan, Scale, and Rotate controls
+    function adjustPlanPan(dx, dy) {
+      planPanX += dx;
+      planPanY += dy;
+      updateImporterView();
+    }
+
+    function adjustPlanZoom(factor) {
+      planScale = Math.max(0.3, Math.min(3.5, planScale * factor));
+      updateImporterView();
+    }
+
+    function rotatePlan(dir) {
+      planRotation = (((planRotation + dir) % 4) + 4) % 4;
+      updateImporterView();
+    }
+
+    function resetPlanTransform() {
+      planPanX = 0;
+      planPanY = 0;
+      planScale = 1.0;
+      planRotation = 0;
+      updateImporterView();
+    }
+
+    // Realistic architectural apartment sample generator
+    function sampleFloorPlanBlueprint(w, h) {
+      w = w || 48;
+      h = h || 36;
+      const grid = Array.from({ length: w }, () => new Float64Array(h));
+      const sx = w / 48, sy = h / 36;
+      function hWall(x0, x1, y, val = 2) {
+        const rx0 = Math.round(x0 * sx), rx1 = Math.round(x1 * sx), ry = Math.round(y * sy);
+        for (let x = rx0; x <= rx1; x++) if (x >= 0 && x < w && ry >= 0 && ry < h) grid[x][ry] = val;
+      }
+      function vWall(x, y0, y1, val = 2) {
+        const rx = Math.round(x * sx), ry0 = Math.round(y0 * sy), ry1 = Math.round(y1 * sy);
+        for (let y = ry0; y <= ry1; y++) if (rx >= 0 && rx < w && y >= 0 && y < h) grid[rx][y] = val;
+      }
+      function door(x, y) {
+        const rx = Math.round(x * sx), ry = Math.round(y * sy);
+        if (rx >= 0 && rx < w && ry >= 0 && ry < h) {
+          grid[rx][ry] = 0;
+          if (!doorOpenings.some(d => d.x === rx && d.y === ry)) doorOpenings.push({ x: rx, y: ry });
+        }
+      }
+      // Outer perimeter building envelope
+      hWall(6, 42, 4); hWall(6, 42, 32); vWall(6, 4, 32); vWall(42, 4, 32);
+      // Interior room dividing walls
+      hWall(6, 24, 18);   // Living Room & Master Bedroom divider
+      vWall(24, 4, 32);   // Central corridor spine wall
+      hWall(24, 42, 16);  // Kitchen & Bedroom 2 divider
+      // Doorways / Passageways
+      door(6, 12);        // Main entrance
+      door(24, 10);       // Living room to corridor
+      door(24, 25);       // Master bedroom to corridor
+      door(32, 16);       // Corridor to kitchen
+      door(32, 4);        // Balcony opening
+      return grid;
+    }
+
+    function loadLogoPreset(name) {
+      lastPresetName = name;
+      lastUploadedImg = null;
+      doorOpenings = [];
+      const res = importerMaxRes || 48;
+      if (name === "apartmentPlan") {
+        const targetH = autoFitAspect ? Math.round(res * 0.75) : res;
+        customBlueprintGrid = sampleFloorPlanBlueprint(res, targetH);
+      } else if (name === "pesLogo") {
+        customBlueprintGrid = SimEngine.pesLogoBlueprint(res, res);
+      } else {
+        customBlueprintGrid = SimEngine.cdacLogoBlueprint(res, res);
+      }
+      updateImporterView();
+    }
+
     function onBlueprintFileSelected(file) {
       if (!file) return;
+      if (!file.type.startsWith("image/")) {
+        showDiagBanner("Unsupported file format. Please upload an architectural plan image (PNG, JPG, SVG, WebP).", "error");
+        return;
+      }
       const reader = new FileReader();
+      reader.onerror = () => {
+        showDiagBanner("Failed to read image file. Please verify file integrity.", "error");
+      };
       reader.onload = e => {
         const img = new Image();
+        img.onerror = () => {
+          showDiagBanner("Failed to decode image data.", "error");
+        };
         img.onload = () => {
           lastUploadedImg = img;
-          processImgToGrid(img);
+          lastPresetName = null;
+          doorOpenings = [];
+          planPanX = 0; planPanY = 0; planScale = 1.0; planRotation = 0;
+          updateImporterView();
         };
         img.src = e.target.result;
       };
       reader.readAsDataURL(file);
     }
 
-    function processImgToGrid(img) {
-      const off = document.createElement("canvas");
-      off.width = 32;
-      off.height = 32;
-      const octx = off.getContext("2d");
-      octx.fillStyle = "#000000";
-      octx.fillRect(0, 0, 32, 32);
-      octx.drawImage(img, 0, 0, 32, 32);
-
-      const idata = octx.getImageData(0, 0, 32, 32);
-      const data = idata.data;
-      customBlueprintGrid = [];
-      for (let x = 0; x < 32; x++) {
-        customBlueprintGrid[x] = new Float64Array(32);
+    function updateImporterView() {
+      renderSourceCanvas();
+      if (lastUploadedImg) {
+        processImgToGrid(lastUploadedImg);
+      } else if (customBlueprintGrid) {
+        runGridDiagnostics(customBlueprintGrid);
+        renderPreviewCanvas(customBlueprintGrid);
       }
+    }
 
-      for (let y = 0; y < 32; y++) {
-        for (let x = 0; x < 32; x++) {
-          const idx = (y * 32 + x) * 4;
-          let lum = (data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114);
-          if (invertImageBlueprint) lum = 255 - lum;
+    function renderSourceCanvas() {
+      const sCanvas = document.getElementById("sourceCanvas");
+      if (!sCanvas) return;
+      const sctx = sCanvas.getContext("2d");
+      const W = sCanvas.width;
+      const H = sCanvas.height;
+      sctx.clearRect(0, 0, W, H);
+      sctx.fillStyle = "#070b13";
+      sctx.fillRect(0, 0, W, H);
 
-          let h = 0;
-          if (lum >= thresholdValue + 50) h = 3;
-          else if (lum >= thresholdValue) h = 2;
-          else if (lum >= thresholdValue - 35) h = 1;
-          customBlueprintGrid[x][y] = h;
+      const dimLabel = document.getElementById("src-dim-label");
+
+      if (lastUploadedImg) {
+        const natW = lastUploadedImg.naturalWidth;
+        const natH = lastUploadedImg.naturalHeight;
+        if (dimLabel) dimLabel.textContent = `${natW}×${natH} px`;
+
+        // Render transformed source image with pan, zoom, and rotation
+        sctx.save();
+        sctx.translate(W / 2 + planPanX, H / 2 + planPanY);
+        sctx.rotate((planRotation * Math.PI) / 2);
+        sctx.scale(planScale, planScale);
+
+        const fitScale = Math.min((W * 0.85) / natW, (H * 0.85) / natH);
+        const dw = natW * fitScale;
+        const dh = natH * fitScale;
+        sctx.drawImage(lastUploadedImg, -dw / 2, -dh / 2, dw, dh);
+        sctx.restore();
+
+        // Overlay simulator grid crop box boundary
+        sctx.save();
+        sctx.strokeStyle = "#00f2fe";
+        sctx.lineWidth = 1.5;
+        sctx.setLineDash([4, 4]);
+        const cropW = W * 0.85;
+        const cropH = H * 0.85;
+        sctx.strokeRect((W - cropW) / 2, (H - cropH) / 2, cropW, cropH);
+        sctx.fillStyle = "rgba(0, 242, 254, 0.75)";
+        sctx.font = "9px monospace";
+        sctx.fillText("SIMULATOR GRID BOUNDS", (W - cropW) / 2 + 6, (H - cropH) / 2 + 14);
+        sctx.restore();
+      } else {
+        if (dimLabel) dimLabel.textContent = `Preset: ${lastPresetName}`;
+        sctx.fillStyle = "#94a3b8";
+        sctx.font = "11px sans-serif";
+        sctx.textAlign = "center";
+        sctx.fillText("📷 Upload architectural plan or choose preset", W / 2, H / 2);
+      }
+    }
+
+    // Connected Component Filtering: eliminates isolated text, dimensions, and symbols
+    function filterSmallComponents(g, minSize) {
+      if (minSize <= 0) return g;
+      const gw = g.length, gh = g[0].length;
+      const visited = Array.from({ length: gw }, () => new Uint8Array(gh));
+      const filtered = Array.from({ length: gw }, () => new Float64Array(gh));
+      for (let x = 0; x < gw; x++) {
+        for (let y = 0; y < gh; y++) {
+          if (g[x][y] > 0 && !visited[x][y]) {
+            const comp = [];
+            const q = [[x, y]];
+            visited[x][y] = 1;
+            while (q.length > 0) {
+              const [cx, cy] = q.pop();
+              comp.push([cx, cy]);
+              for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]]) {
+                const nx = cx + dx, ny = cy + dy;
+                if (nx >= 0 && nx < gw && ny >= 0 && ny < gh && g[nx][ny] > 0 && !visited[nx][ny]) {
+                  visited[nx][ny] = 1;
+                  q.push([nx, ny]);
+                }
+              }
+            }
+            if (comp.length >= minSize) {
+              for (const [cx, cy] of comp) filtered[cx][cy] = g[cx][cy];
+            }
+          }
         }
       }
+      return filtered;
+    }
+
+    // Reachability Analysis: checks if swarm robots can navigate into all rooms from the perimeter
+    function analyzeReachability(g) {
+      const gw = g.length, gh = g[0].length;
+      const visited = Array.from({ length: gw }, () => new Uint8Array(gh));
+      const queue = [];
+
+      for (let x = 0; x < gw; x++) {
+        if (g[x][0] === 0) { visited[x][0] = 1; queue.push([x, 0]); }
+        if (g[x][gh - 1] === 0) { visited[x][gh - 1] = 1; queue.push([x, gh - 1]); }
+      }
+      for (let y = 0; y < gh; y++) {
+        if (g[0][y] === 0 && !visited[0][y]) { visited[0][y] = 1; queue.push([0, y]); }
+        if (g[gw - 1][y] === 0 && !visited[gw - 1][y]) { visited[gw - 1][y] = 1; queue.push([gw - 1, y]); }
+      }
+
+      let head = 0;
+      while (head < queue.length) {
+        const [cx, cy] = queue[head++];
+        for (const [dx, dy] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx >= 0 && nx < gw && ny >= 0 && ny < gh && !visited[nx][ny] && g[nx][ny] === 0) {
+            visited[nx][ny] = 1;
+            queue.push([nx, ny]);
+          }
+        }
+      }
+
+      const unreachableCells = [];
+      for (let x = 0; x < gw; x++) {
+        for (let y = 0; y < gh; y++) {
+          if (g[x][y] === 0 && !visited[x][y]) {
+            unreachableCells.push({ x, y });
+          }
+        }
+      }
+      return {
+        reachableCount: queue.length,
+        unreachableCount: unreachableCells.length,
+        unreachableCells,
+        isFullyNavigable: unreachableCells.length === 0,
+      };
+    }
+
+    function processImgToGrid(img) {
+      if (!img) return;
+      const maxDim = importerMaxRes || 48;
+      let targetW = maxDim;
+      let targetH = maxDim;
+
+      const natW = img.naturalWidth || maxDim;
+      const natH = img.naturalHeight || maxDim;
+      const aspect = natW / natH;
+
+      if (autoFitAspect && aspect > 0) {
+        if (aspect >= 1.0) {
+          targetW = maxDim;
+          targetH = Math.max(12, Math.min(maxDim, Math.round(maxDim / aspect)));
+        } else {
+          targetH = maxDim;
+          targetW = Math.max(12, Math.min(maxDim, Math.round(maxDim * aspect)));
+        }
+      }
+
+      // Offscreen rasterization with pan, scale, and rotation
+      const off = document.createElement("canvas");
+      off.width = targetW;
+      off.height = targetH;
+      const octx = off.getContext("2d");
+      octx.fillStyle = invertImageBlueprint ? "#ffffff" : "#000000";
+      octx.fillRect(0, 0, targetW, targetH);
+
+      octx.save();
+      octx.translate(targetW / 2 + (planPanX * targetW) / 280, targetH / 2 + (planPanY * targetH) / 230);
+      octx.rotate((planRotation * Math.PI) / 2);
+      octx.scale(planScale, planScale);
+
+      const fitScale = Math.min(targetW / natW, targetH / natH) * 0.95;
+      const dw = natW * fitScale;
+      const dh = natH * fitScale;
+      octx.drawImage(img, -dw / 2, -dh / 2, dw, dh);
+      octx.restore();
+
+      const idata = octx.getImageData(0, 0, targetW, targetH);
+      const data = idata.data;
+      let tempGrid = Array.from({ length: targetW }, () => new Float64Array(targetH));
+
+      // Compute image contrast standard deviation for quality warning
+      let sumLum = 0, sumSq = 0;
+      const numPix = targetW * targetH;
+
+      for (let y = 0; y < targetH; y++) {
+        for (let x = 0; x < targetW; x++) {
+          const idx = (y * targetW + x) * 4;
+          let lum = data[idx] * 0.299 + data[idx + 1] * 0.587 + data[idx + 2] * 0.114;
+          sumLum += lum;
+          sumSq += lum * lum;
+
+          let stroke = invertImageBlueprint ? 255 - lum : lum;
+
+          if (importerMode === "architectural") {
+            // Line wall detection: only high contrast strokes become walls
+            if (stroke >= thresholdValue) {
+              tempGrid[x][y] = wallHeight;
+            } else {
+              tempGrid[x][y] = 0;
+            }
+          } else {
+            // Solid legacy mode
+            let h = 0;
+            if (stroke >= thresholdValue + 50) h = 3;
+            else if (stroke >= thresholdValue) h = 2;
+            else if (stroke >= thresholdValue - 35) h = 1;
+            tempGrid[x][y] = h;
+          }
+        }
+      }
+
+      const meanLum = sumLum / numPix;
+      const stdDev = Math.sqrt(Math.max(0, sumSq / numPix - meanLum * meanLum));
+
+      // Filter isolated text labels, dimensions, and symbols
+      if (importerMode === "architectural" && noiseFilterSize > 0) {
+        tempGrid = filterSmallComponents(tempGrid, noiseFilterSize);
+      }
+
+      // Wall thickness adjustment
+      if (importerMode === "architectural") {
+        if (wallThickness === "thick") {
+          const dilated = Array.from({ length: targetW }, () => new Float64Array(targetH));
+          for (let x = 0; x < targetW; x++) {
+            for (let y = 0; y < targetH; y++) {
+              if (tempGrid[x][y] > 0) {
+                dilated[x][y] = tempGrid[x][y];
+                for (const [dx, dy] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+                  const nx = x + dx, ny = y + dy;
+                  if (nx >= 0 && nx < targetW && ny >= 0 && ny < targetH && dilated[nx][ny] === 0) {
+                    dilated[nx][ny] = tempGrid[x][y];
+                  }
+                }
+              }
+            }
+          }
+          tempGrid = dilated;
+        } else if (wallThickness === "thin") {
+          // Suppress 2x2 solid blocks to thin single contours
+          for (let x = 0; x < targetW - 1; x++) {
+            for (let y = 0; y < targetH - 1; y++) {
+              if (tempGrid[x][y] > 0 && tempGrid[x+1][y] > 0 && tempGrid[x][y+1] > 0 && tempGrid[x+1][y+1] > 0) {
+                tempGrid[x+1][y+1] = 0;
+              }
+            }
+          }
+        }
+      }
+
+      // Re-apply door openings
+      for (const d of doorOpenings) {
+        if (d.x >= 0 && d.x < targetW && d.y >= 0 && d.y < targetH) {
+          tempGrid[d.x][d.y] = 0;
+        }
+      }
+
+      // Filled floor mode
+      if (filledFloorMode && importerMode === "architectural") {
+        const reach = analyzeReachability(tempGrid);
+        for (const un of reach.unreachableCells) {
+          tempGrid[un.x][un.y] = 1;
+        }
+      }
+
+      customBlueprintGrid = tempGrid;
+      runGridDiagnostics(customBlueprintGrid, stdDev, natW, natH);
       renderPreviewCanvas(customBlueprintGrid);
+    }
+
+    function runGridDiagnostics(grid, stdDev, imgW, imgH) {
+      if (!grid) return;
+      const gw = grid.length, gh = grid[0].length;
+      let wallCells = 0;
+      for (let x = 0; x < gw; x++) {
+        for (let y = 0; y < gh; y++) if (grid[x][y] > 0) wallCells++;
+      }
+
+      const reach = analyzeReachability(grid);
+      const warnings = [];
+
+      if (imgW && imgH && (imgW < 80 || imgH < 80)) {
+        warnings.push(`Low resolution (${imgW}×${imgH} px). Lines may be coarse.`);
+      }
+      if (stdDev !== undefined && stdDev < 15) {
+        warnings.push("Low contrast detected. Increase sensitivity threshold.");
+      }
+      if (wallCells < 5) {
+        warnings.push("Very few wall cells detected. Try adjusting the contrast threshold or toggling invert.");
+      }
+      if (!reach.isFullyNavigable && reach.unreachableCount > 0) {
+        warnings.push(`Sealed Room Detected: ${reach.unreachableCount} interior cells cannot be reached. Use 🚪 Door tool to carve an entrance.`);
+      }
+
+      diagnosticsReport = {
+        wallCells,
+        openings: doorOpenings.length,
+        unreachable: reach.unreachableCount,
+        unreachableCells: reach.unreachableCells,
+        isNavigable: reach.isFullyNavigable,
+        warnings,
+      };
+
+      updateDiagnosticsUI();
+    }
+
+    function updateDiagnosticsUI() {
+      const banner = document.getElementById("importer-diagnostics");
+      if (!banner) return;
+      const r = diagnosticsReport;
+
+      if (r.warnings.length > 0) {
+        banner.className = "diag-banner warning";
+        banner.innerHTML = `
+          <span>⚠️ <b>Validation Warning:</b> ${r.warnings.join(" | ")}</span>
+          <span style="font-family: monospace; font-size: 10px;">🧱 ${r.wallCells} walls | 🚪 ${r.openings} doors</span>
+        `;
+      } else {
+        banner.className = "diag-banner ok";
+        banner.innerHTML = `
+          <span>✅ <b>Layout Verified:</b> All rooms are navigable. Swarm robots have full access from depots.</span>
+          <span style="font-family: monospace; font-size: 10px;">🧱 ${r.wallCells} walls | 🚪 ${r.openings} doors</span>
+        `;
+      }
+    }
+
+    function showDiagBanner(msg, type) {
+      const banner = document.getElementById("importer-diagnostics");
+      if (!banner) return;
+      banner.className = `diag-banner ${type}`;
+      banner.innerHTML = `<span>${type === "error" ? "❌" : "⚠️"} ${msg}</span>`;
     }
 
     function renderPreviewCanvas(grid) {
       const pCanvas = document.getElementById("previewCanvas");
-      if (!pCanvas) return;
+      if (!pCanvas || !grid || !grid.length) return;
+      const gw = grid.length;
+      const gh = grid[0] ? grid[0].length : gw;
+      pCanvas.width = gw;
+      pCanvas.height = gh;
       const pctx = pCanvas.getContext("2d");
-      pctx.clearRect(0, 0, 32, 32);
-      pctx.fillStyle = "#0b0f19";
-      pctx.fillRect(0, 0, 32, 32);
+      pctx.clearRect(0, 0, gw, gh);
+      pctx.fillStyle = "#070b13";
+      pctx.fillRect(0, 0, gw, gh);
 
-      for (let x = 0; x < 32; x++) {
-        for (let y = 0; y < 32; y++) {
-          const h = grid && grid[x] ? grid[x][y] : 0;
+      let totalBlocks = 0;
+      for (let x = 0; x < gw; x++) {
+        for (let y = 0; y < gh; y++) {
+          const h = grid[x][y] || 0;
           if (h > 0) {
+            totalBlocks += h;
             pctx.fillStyle = h === 3 ? "#00f2fe" : (h === 2 ? "#10b981" : "#38bdf8");
             pctx.fillRect(x, y, 1, 1);
           }
         }
       }
+
+      // Highlight verified door / window openings in amber
+      for (const d of doorOpenings) {
+        if (d.x >= 0 && d.x < gw && d.y >= 0 && d.y < gh) {
+          pctx.fillStyle = "#f59e0b";
+          pctx.fillRect(d.x, d.y, 1, 1);
+        }
+      }
+
+      // Highlight unreachable interior cells in subtle red overlay
+      if (diagnosticsReport && diagnosticsReport.unreachableCells) {
+        pctx.fillStyle = "rgba(239, 68, 68, 0.4)";
+        for (const un of diagnosticsReport.unreachableCells) {
+          pctx.fillRect(un.x, un.y, 1, 1);
+        }
+      }
+
+      const badge = document.getElementById("importer-dim-badge");
+      if (badge) {
+        const ratio = (gw / gh).toFixed(2);
+        const typeStr = gw === gh ? "Square" : (gw > gh ? "Landscape" : "Portrait");
+        badge.textContent = `📐 Grid: ${gw}×${gh} (${typeStr} ${ratio}:1) | ${totalBlocks} Blocks`;
+      }
+    }
+
+    // Interactive Preview Canvas Editor: Click/Drag to paint walls, carve doors, or erase
+    function initPreviewCanvasEditor() {
+      const pCanvas = document.getElementById("previewCanvas");
+      if (!pCanvas || pCanvas._hasEditorListeners) return;
+      pCanvas._hasEditorListeners = true;
+
+      function handleEditorAction(e) {
+        if (!customBlueprintGrid) return;
+        const rect = pCanvas.getBoundingClientRect();
+        const gw = customBlueprintGrid.length;
+        const gh = customBlueprintGrid[0].length;
+        const scaleX = gw / rect.width;
+        const scaleY = gh / rect.height;
+        const x = Math.floor((e.clientX - rect.left) * scaleX);
+        const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+        if (x < 0 || x >= gw || y < 0 || y >= gh) return;
+
+        if (previewEditorTool === "draw") {
+          customBlueprintGrid[x][y] = wallHeight;
+          doorOpenings = doorOpenings.filter(d => d.x !== x || d.y !== y);
+        } else if (previewEditorTool === "open") {
+          customBlueprintGrid[x][y] = 0;
+          if (!doorOpenings.some(d => d.x === x && d.y === y)) {
+            doorOpenings.push({ x, y });
+          }
+        } else if (previewEditorTool === "erase") {
+          customBlueprintGrid[x][y] = 0;
+          doorOpenings = doorOpenings.filter(d => d.x !== x || d.y !== y);
+        }
+
+        runGridDiagnostics(customBlueprintGrid);
+        renderPreviewCanvas(customBlueprintGrid);
+      }
+
+      pCanvas.addEventListener("mousedown", e => {
+        if (e.button === 0) {
+          isDrawingOnPreview = true;
+          handleEditorAction(e);
+        }
+      });
+
+      window.addEventListener("mouseup", () => {
+        isDrawingOnPreview = false;
+      });
+
+      pCanvas.addEventListener("mousemove", e => {
+        if (!customBlueprintGrid) return;
+        const rect = pCanvas.getBoundingClientRect();
+        const gw = customBlueprintGrid.length;
+        const gh = customBlueprintGrid[0].length;
+        const scaleX = gw / rect.width;
+        const scaleY = gh / rect.height;
+        const x = Math.floor((e.clientX - rect.left) * scaleX);
+        const y = Math.floor((e.clientY - rect.top) * scaleY);
+
+        const hoverLabel = document.getElementById("preview-hover-info");
+        if (x >= 0 && x < gw && y >= 0 && y < gh) {
+          const h = customBlueprintGrid[x][y];
+          const isDoor = doorOpenings.some(d => d.x === x && d.y === y);
+          const status = isDoor ? "🚪 Door Opening" : (h > 0 ? `🧱 Wall (H${h})` : "Empty Space");
+          if (hoverLabel) hoverLabel.textContent = `Cell (${x}, ${y}): ${status}`;
+        }
+
+        if (isDrawingOnPreview) {
+          handleEditorAction(e);
+        }
+      });
     }
 
     function applyCustomBlueprint() {
-      if (!customBlueprintGrid) {
-        loadLogoPreset("cdacLogo");
+      if (!customBlueprintGrid || !customBlueprintGrid.length) {
+        showDiagBanner("No blueprint generated. Please upload an image or choose a preset.", "error");
+        return;
       }
+
+      const gw = customBlueprintGrid.length;
+      const gh = customBlueprintGrid[0].length;
+
+      // Quality Validation: Grid bounds and height check
+      if (gw < 16 || gw > 128 || gh < 16 || gh > 128) {
+        showDiagBanner(`Invalid grid dimensions ${gw}×${gh}. Must be between 16 and 128.`, "error");
+        return;
+      }
+
+      let totalBlocks = 0;
+      for (let x = 0; x < gw; x++) {
+        for (let y = 0; y < gh; y++) {
+          const h = customBlueprintGrid[x][y];
+          if (h < 0 || h > 3) {
+            showDiagBanner(`Invalid block height ${h} at (${x}, ${y}). Allowed heights are 0..3.`, "error");
+            return;
+          }
+          totalBlocks += h;
+        }
+      }
+
+      if (totalBlocks === 0) {
+        showDiagBanner("Cannot apply an empty blueprint with 0 wall blocks. Please adjust threshold or paint walls.", "error");
+        return;
+      }
+
       SimEngine.setCustomBlueprint(customBlueprintGrid, "Custom Blueprint");
+
       const optTop = document.getElementById("top-opt-custom");
       if (optTop) {
         optTop.style.display = "block";
@@ -1587,6 +2442,14 @@
         optSide.style.display = "block";
         document.getElementById("sel-blueprint").value = "custom";
       }
+
+      const optGridCust = document.getElementById("top-opt-grid-custom");
+      if (optGridCust) {
+        optGridCust.style.display = "block";
+        optGridCust.textContent = `${gw}×${gh} (Plan)`;
+        document.getElementById("top-sel-gridsize").value = "custom";
+      }
+
       closeCustomBlueprintModal();
       resetSim();
     }
@@ -1882,24 +2745,39 @@
       }
     }
 
-    // ── 3D & 2D Rotation System ─────────────────────────────────────────────
-    function getRotatedGrid(x, y, rot) {
-      const gs = 32;
+    // ── 3D & 2D Rotation & Projection Geometry ──────────────────────────────
+    function getVisualDimensions(rot, w, h) {
+      const state = SimEngine ? SimEngine.getState() : null;
+      const gw = w || (state ? (state.gridWidth || 32) : 32);
+      const gh = h || (state ? (state.gridHeight || 32) : 32);
+      const r = ((rot % 4) + 4) % 4;
+      if (r === 1 || r === 3) {
+        return { visW: gh, visH: gw, gw, gh };
+      }
+      return { visW: gw, visH: gh, gw, gh };
+    }
+
+    function getRotatedGrid(x, y, rot, w, h) {
+      const state = SimEngine ? SimEngine.getState() : null;
+      const gw = w || (state ? (state.gridWidth || 32) : 32);
+      const gh = h || (state ? (state.gridHeight || 32) : 32);
       switch (((rot % 4) + 4) % 4) {
         case 0: return { rx: x, ry: y };
-        case 1: return { rx: y, ry: gs - 1 - x };
-        case 2: return { rx: gs - 1 - x, ry: gs - 1 - y };
-        case 3: return { rx: gs - 1 - y, ry: x };
+        case 1: return { rx: y, ry: gw - 1 - x };
+        case 2: return { rx: gw - 1 - x, ry: gh - 1 - y };
+        case 3: return { rx: gh - 1 - y, ry: x };
       }
     }
 
-    function getOriginalGrid(rx, ry, rot) {
-      const gs = 32;
+    function getOriginalGrid(rx, ry, rot, w, h) {
+      const state = SimEngine ? SimEngine.getState() : null;
+      const gw = w || (state ? (state.gridWidth || 32) : 32);
+      const gh = h || (state ? (state.gridHeight || 32) : 32);
       switch (((rot % 4) + 4) % 4) {
         case 0: return { x: rx, y: ry };
-        case 1: return { x: gs - 1 - ry, y: rx };
-        case 2: return { x: gs - 1 - rx, y: gs - 1 - ry };
-        case 3: return { x: ry, y: gs - 1 - rx };
+        case 1: return { x: gw - 1 - ry, y: rx };
+        case 2: return { x: gw - 1 - rx, y: gh - 1 - ry };
+        case 3: return { x: ry, y: gh - 1 - rx };
       }
     }
 
@@ -2043,29 +2921,34 @@
       const wrap = document.getElementById("canvas-wrap");
       const W = wrap.clientWidth;
       const H = wrap.clientHeight;
-      const gs = 32;
+      const state = SimEngine.getState();
+      const gw = state ? (state.gridWidth || 32) : 32;
+      const gh = state ? (state.gridHeight || 32) : 32;
+      const { visW, visH } = getVisualDimensions(viewRotation, gw, gh);
 
       if (currentView === "2d") {
-        const baseCellSize = Math.min(W, H) / gs;
+        const baseCellSize = Math.min(W / visW, H / visH) * 0.92;
         const cellSize = baseCellSize * viewZoom;
-        const offX = (W - cellSize * gs) / 2 + viewPanX;
-        const offY = (H - cellSize * gs) / 2 + viewPanY;
+        const offX = (W - cellSize * visW) / 2 + viewPanX;
+        const offY = (H - cellSize * visH) / 2 + viewPanY;
         const rx = Math.floor((mx - offX) / cellSize);
         const ry = Math.floor((my - offY) / cellSize);
-        if (rx >= 0 && rx < gs && ry >= 0 && ry < gs) {
-          const orig = getOriginalGrid(rx, ry, viewRotation);
+        if (rx >= 0 && rx < visW && ry >= 0 && ry < visH) {
+          const orig = getOriginalGrid(rx, ry, viewRotation, gw, gh);
           return { gx: orig.x, gy: orig.y, z: 0 };
         }
         return { gx: -1, gy: -1, z: 0 };
       } else {
-        const baseTileW = (Math.min(W, H) * 1.35 / gs);
+        const maxDim = Math.max(visW, visH);
+        const baseTileW = (Math.min(W, H) * 1.35 / maxDim);
         const tileW = baseTileW * viewZoom;
         const tileH = tileW * 0.5;
         const blockH = tileH * 0.65;
-        const centerX = W / 2 + viewPanX;
-        const centerY = H * 0.28 + viewPanY;
+        const midRx = (visW - 1) / 2;
+        const midRy = (visH - 1) / 2;
+        const centerX = W / 2 + viewPanX - (midRx - midRy) * (tileW / 2);
+        const centerY = H * 0.38 + viewPanY - (midRx + midRy) * (tileH / 2);
 
-        const state = SimEngine.getState();
         const curH = state ? state.currentHeight : null;
 
         const relX = mx - centerX;
@@ -2077,9 +2960,9 @@
           const v_z = (2 * relY_z) / tileH;
           const testRx = Math.floor((v_z + u) / 2);
           const testRy = Math.floor((v_z - u) / 2);
-          if (testRx >= 0 && testRx < gs && testRy >= 0 && testRy < gs) {
-            const orig = getOriginalGrid(testRx, testRy, viewRotation);
-            if (curH && curH[orig.x][orig.y] >= z) {
+          if (testRx >= 0 && testRx < visW && testRy >= 0 && testRy < visH) {
+            const orig = getOriginalGrid(testRx, testRy, viewRotation, gw, gh);
+            if (curH && curH[orig.x] && curH[orig.x][orig.y] >= z) {
               return { gx: orig.x, gy: orig.y, z: curH[orig.x][orig.y] };
             }
           }
@@ -2090,9 +2973,9 @@
         const v = (2 * relY) / tileH;
         const testRx = Math.floor((v + u) / 2);
         const testRy = Math.floor((v - u) / 2);
-        if (testRx >= 0 && testRx < gs && testRy >= 0 && testRy < gs) {
-          const orig = getOriginalGrid(testRx, testRy, viewRotation);
-          const z = (curH && orig.x >= 0 && orig.x < gs && orig.y >= 0 && orig.y < gs) ? curH[orig.x][orig.y] : 0;
+        if (testRx >= 0 && testRx < visW && testRy >= 0 && testRy < visH) {
+          const orig = getOriginalGrid(testRx, testRy, viewRotation, gw, gh);
+          const z = (curH && orig.x >= 0 && orig.x < gw && orig.y >= 0 && orig.y < gh && curH[orig.x]) ? curH[orig.x][orig.y] : 0;
           return { gx: orig.x, gy: orig.y, z };
         }
         return { gx: -1, gy: -1, z: 0 };
@@ -2107,9 +2990,11 @@
       const coords = getGridCoordsFromScreen(mx, my);
       const gx = coords.gx;
       const gy = coords.gy;
-      const gs = 32;
+      const state = SimEngine.getState();
+      const gw = state ? (state.gridWidth || 32) : 32;
+      const gh = state ? (state.gridHeight || 32) : 32;
 
-      if (gx >= 0 && gx < gs && gy >= 0 && gy < gs) {
+      if (gx >= 0 && gx < gw && gy >= 0 && gy < gh) {
         if (currentTool === "h1") SimEngine.setTargetHeight(gx, gy, 1);
         else if (currentTool === "h2") SimEngine.setTargetHeight(gx, gy, 2);
         else if (currentTool === "h3") SimEngine.setTargetHeight(gx, gy, 3);
@@ -2180,16 +3065,18 @@
     }
 
     function renderHoverHighlight(ctx, state, W, H) {
-      if (hoverGx < 0 || hoverGx >= 32 || hoverGy < 0 || hoverGy >= 32 || !isHoveringCanvas) return;
+      const gw = state.gridWidth || 32;
+      const gh = state.gridHeight || 32;
+      if (hoverGx < 0 || hoverGx >= gw || hoverGy < 0 || hoverGy >= gh || !isHoveringCanvas) return;
 
-      const gs = state.gridSize || 32;
-      const { rx, ry } = getRotatedGrid(hoverGx, hoverGy, viewRotation);
+      const { visW, visH } = getVisualDimensions(viewRotation, gw, gh);
+      const { rx, ry } = getRotatedGrid(hoverGx, hoverGy, viewRotation, gw, gh);
 
       if (currentView === "2d") {
-        const baseCellSize = Math.min(W, H) / gs;
+        const baseCellSize = Math.min(W / visW, H / visH) * 0.92;
         const cellSize = baseCellSize * viewZoom;
-        const offX = (W - cellSize * gs) / 2 + viewPanX;
-        const offY = (H - cellSize * gs) / 2 + viewPanY;
+        const offX = (W - cellSize * visW) / 2 + viewPanX;
+        const offY = (H - cellSize * visH) / 2 + viewPanY;
         const px = offX + rx * cellSize;
         const py = offY + ry * cellSize;
 
@@ -2203,12 +3090,15 @@
         ctx.fillRect(px + 0.5, py + 0.5, cellSize - 1, cellSize - 1);
         ctx.restore();
       } else {
-        const baseTileW = (Math.min(W, H) * 1.35 / gs);
+        const maxDim = Math.max(visW, visH);
+        const baseTileW = (Math.min(W, H) * 1.35 / maxDim);
         const tileW = baseTileW * viewZoom;
         const tileH = tileW * 0.5;
         const blockH = tileH * 0.65;
-        const centerX = W / 2 + viewPanX;
-        const centerY = H * 0.28 + viewPanY;
+        const midRx = (visW - 1) / 2;
+        const midRy = (visH - 1) / 2;
+        const centerX = W / 2 + viewPanX - (midRx - midRy) * (tileW / 2);
+        const centerY = H * 0.38 + viewPanY - (midRx + midRy) * (tileH / 2);
 
         function toScreen(x, y, z) {
           return {
@@ -2217,7 +3107,7 @@
           };
         }
 
-        const z = state.currentHeight ? state.currentHeight[hoverGx][hoverGy] : 0;
+        const z = state.currentHeight && state.currentHeight[hoverGx] ? state.currentHeight[hoverGx][hoverGy] : 0;
         const pT = toScreen(rx, ry, z);
         const pR = toScreen(rx + 1, ry, z);
         const pB = toScreen(rx + 1, ry + 1, z);
@@ -2246,16 +3136,18 @@
       const hud = document.getElementById("cell-inspector");
       if (!hud) return;
 
-      if (hoverGx < 0 || hoverGx >= 32 || hoverGy < 0 || hoverGy >= 32 || !isHoveringCanvas) {
+      const gw = state.gridWidth || 32;
+      const gh = state.gridHeight || 32;
+      if (hoverGx < 0 || hoverGx >= gw || hoverGy < 0 || hoverGy >= gh || !isHoveringCanvas) {
         hud.classList.remove("visible");
         return;
       }
 
       hud.classList.add("visible");
       const x = hoverGx, y = hoverGy;
-      const th = state.targetHeight ? state.targetHeight[x][y] : 0;
-      const ch = state.currentHeight ? state.currentHeight[x][y] : 0;
-      const obs = state.obstacles ? state.obstacles[x][y] : false;
+      const th = state.targetHeight && state.targetHeight[x] ? state.targetHeight[x][y] : 0;
+      const ch = state.currentHeight && state.currentHeight[x] ? state.currentHeight[x][y] : 0;
+      const obs = state.obstacles && state.obstacles[x] ? state.obstacles[x][y] : false;
       const isDepot = state.depots && state.depots.some(d => d.x === x && d.y === y);
 
       let botStatus = "None";
@@ -2298,27 +3190,29 @@
 
     // ── 2D Floorplan Grid Renderer ──────────────────────────────────────────
     function render2DMap(ctx, state, W, H) {
-      const gs = state.gridSize || 32;
-      const baseCellSize = Math.min(W, H) / gs;
+      const gw = state.gridWidth || 32;
+      const gh = state.gridHeight || 32;
+      const { visW, visH } = getVisualDimensions(viewRotation, gw, gh);
+      const baseCellSize = Math.min(W / visW, H / visH) * 0.92;
       const cellSize = baseCellSize * viewZoom;
-      const offX = (W - cellSize * gs) / 2 + viewPanX;
-      const offY = (H - cellSize * gs) / 2 + viewPanY;
+      const offX = (W - cellSize * visW) / 2 + viewPanX;
+      const offY = (H - cellSize * visH) / 2 + viewPanY;
 
       // Dark floor background
       ctx.fillStyle = "#070b13";
-      ctx.fillRect(offX, offY, cellSize * gs, cellSize * gs);
+      ctx.fillRect(offX, offY, cellSize * visW, cellSize * visH);
 
       // Grid Cells
-      for (let rx = 0; rx < gs; rx++) {
-        for (let ry = 0; ry < gs; ry++) {
-          const orig = getOriginalGrid(rx, ry, viewRotation);
+      for (let rx = 0; rx < visW; rx++) {
+        for (let ry = 0; ry < visH; ry++) {
+          const orig = getOriginalGrid(rx, ry, viewRotation, gw, gh);
           const x = orig.x;
           const y = orig.y;
           const px = offX + rx * cellSize;
           const py = offY + ry * cellSize;
-          const th = state.targetHeight[x][y];
-          const ch = state.currentHeight[x][y];
-          const obs = state.obstacles[x][y];
+          const th = state.targetHeight && state.targetHeight[x] ? state.targetHeight[x][y] : 0;
+          const ch = state.currentHeight && state.currentHeight[x] ? state.currentHeight[x][y] : 0;
+          const obs = state.obstacles && state.obstacles[x] ? state.obstacles[x][y] : 0;
 
           // Base cell background
           ctx.fillStyle = "#0f172a";
@@ -2370,13 +3264,13 @@
 
       // Heatmap Overlays
       if (currentHeatmap !== "none") {
-        renderHeatmapOverlay2D(ctx, state, gs, cellSize, offX, offY);
+        renderHeatmapOverlay2D(ctx, state, visW, visH, gw, gh, cellSize, offX, offY);
       }
 
       // Material Depots (ECOVACS Omni Stations)
       if (state.depots) {
         for (const d of state.depots) {
-          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation);
+          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation, gw, gh);
           const cx = offX + rx * cellSize + cellSize / 2;
           const cy = offY + ry * cellSize + cellSize / 2;
           const s = cellSize * 0.45;
@@ -2402,7 +3296,7 @@
       // Moving Dynamic Hazard Zone (2x2)
       if (state.movingHazard && state.movingHazard.enabled) {
         const mh = state.movingHazard;
-        const { rx, ry } = getRotatedGrid(mh.x, mh.y, viewRotation);
+        const { rx, ry } = getRotatedGrid(mh.x, mh.y, viewRotation, gw, gh);
         const hx = offX + Math.min(rx, rx + mh.size - 1) * cellSize;
         const hy = offY + Math.min(ry, ry + mh.size - 1) * cellSize;
         const hw = cellSize * mh.size;
@@ -2423,7 +3317,7 @@
       // Robots
       if (state.robots) {
         for (const bot of state.robots) {
-          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation);
+          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation, gw, gh);
           const cx = offX + rx * cellSize + cellSize / 2;
           const cy = offY + ry * cellSize + cellSize / 2;
           const r = Math.max(cellSize * 0.28, 3.5);
@@ -2497,26 +3391,26 @@
     }
 
     // ── 2D Heatmap Layers ───────────────────────────────────────────────────
-    function renderHeatmapOverlay2D(ctx, state, gs, cs, ox, oy) {
-      for (let rx = 0; rx < gs; rx++) {
-        for (let ry = 0; ry < gs; ry++) {
-          const orig = getOriginalGrid(rx, ry, viewRotation);
+    function renderHeatmapOverlay2D(ctx, state, visW, visH, gw, gh, cs, ox, oy) {
+      for (let rx = 0; rx < visW; rx++) {
+        for (let ry = 0; ry < visH; ry++) {
+          const orig = getOriginalGrid(rx, ry, viewRotation, gw, gh);
           const x = orig.x;
           const y = orig.y;
           let intensity = 0;
           let color = null;
 
           if (currentHeatmap === "pheromone") {
-            const pb = state.pheromoneBuild ? state.pheromoneBuild[x][y] : 0;
-            const pt = state.pheromoneTrail ? state.pheromoneTrail[x][y] : 0;
+            const pb = state.pheromoneBuild && state.pheromoneBuild[x] ? state.pheromoneBuild[x][y] : 0;
+            const pt = state.pheromoneTrail && state.pheromoneTrail[x] ? state.pheromoneTrail[x][y] : 0;
             intensity = Math.min((pb * 0.6 + pt * 0.4) / 10.0, 1.0);
             color = `rgba(0, 242, 254, ${intensity * 0.65})`;
           } else if (currentHeatmap === "traffic") {
-            const tc = state.trafficCount ? state.trafficCount[x][y] : 0;
+            const tc = state.trafficCount && state.trafficCount[x] ? state.trafficCount[x][y] : 0;
             intensity = Math.min(tc / 35.0, 1.0);
             color = `rgba(239, 68, 68, ${intensity * 0.65})`;
           } else if (currentHeatmap === "deprank") {
-            const dr = state.depRank ? state.depRank[x][y] : 0;
+            const dr = state.depRank && state.depRank[x] ? state.depRank[x][y] : 0;
             if (dr !== Infinity && dr > 0) {
               intensity = Math.min(dr / 30.0, 1.0);
               color = `rgba(168, 85, 247, ${intensity * 0.65})`;
@@ -2533,13 +3427,18 @@
 
     // ── 3D Isometric Voxel Renderer ─────────────────────────────────────────
     function render3DIsometric(ctx, state, W, H) {
-      const gs = state.gridSize || 32;
-      const baseTileW = (Math.min(W, H) * 1.35 / gs);
+      const gw = state.gridWidth || 32;
+      const gh = state.gridHeight || 32;
+      const { visW, visH } = getVisualDimensions(viewRotation, gw, gh);
+      const maxDim = Math.max(visW, visH);
+      const baseTileW = (Math.min(W, H) * 1.35 / maxDim);
       const tileW = baseTileW * viewZoom;
       const tileH = tileW * 0.5;
       const blockH = tileH * 0.65;
-      const centerX = W / 2 + viewPanX;
-      const centerY = H * 0.28 + viewPanY;
+      const midRx = (visW - 1) / 2;
+      const midRy = (visH - 1) / 2;
+      const centerX = W / 2 + viewPanX - (midRx - midRy) * (tileW / 2);
+      const centerY = H * 0.38 + viewPanY - (midRx + midRy) * (tileH / 2);
 
       function toScreen(x, y, z) {
         return {
@@ -2550,18 +3449,18 @@
 
       // Painter's Algorithm Depth Sort:
       // Along rotated viewing axis (rx + ry), cells with lower (rx + ry) are further from camera.
-      for (let d = 0; d <= 2 * (gs - 1); d++) {
-        for (let rx = 0; rx < gs; rx++) {
+      for (let d = 0; d <= (visW + visH - 2); d++) {
+        for (let rx = 0; rx < visW; rx++) {
           const ry = d - rx;
-          if (ry < 0 || ry >= gs) continue;
+          if (ry < 0 || ry >= visH) continue;
 
-          const orig = getOriginalGrid(rx, ry, viewRotation);
+          const orig = getOriginalGrid(rx, ry, viewRotation, gw, gh);
           const x = orig.x;
           const y = orig.y;
 
-          const th = state.targetHeight[x][y];
-          const ch = state.currentHeight[x][y];
-          const obs = state.obstacles[x][y];
+          const th = state.targetHeight && state.targetHeight[x] ? state.targetHeight[x][y] : 0;
+          const ch = state.currentHeight && state.currentHeight[x] ? state.currentHeight[x][y] : 0;
+          const obs = state.obstacles && state.obstacles[x] ? state.obstacles[x][y] : 0;
 
           // Ground floor tile
           let floorCol = "#0f172a";
@@ -2578,16 +3477,16 @@
             let intensity = 0;
             let col = null;
             if (currentHeatmap === "pheromone") {
-              const pb = state.pheromoneBuild ? state.pheromoneBuild[x][y] : 0;
-              const pt = state.pheromoneTrail ? state.pheromoneTrail[x][y] : 0;
+              const pb = state.pheromoneBuild && state.pheromoneBuild[x] ? state.pheromoneBuild[x][y] : 0;
+              const pt = state.pheromoneTrail && state.pheromoneTrail[x] ? state.pheromoneTrail[x][y] : 0;
               intensity = Math.min((pb * 0.6 + pt * 0.4) / 10.0, 1.0);
               col = `rgba(0, 242, 254, ${intensity * 0.5})`;
             } else if (currentHeatmap === "traffic") {
-              const tc = state.trafficCount ? state.trafficCount[x][y] : 0;
+              const tc = state.trafficCount && state.trafficCount[x] ? state.trafficCount[x][y] : 0;
               intensity = Math.min(tc / 35.0, 1.0);
               col = `rgba(239, 68, 68, ${intensity * 0.5})`;
             } else if (currentHeatmap === "deprank") {
-              const dr = state.depRank ? state.depRank[x][y] : 0;
+              const dr = state.depRank && state.depRank[x] ? state.depRank[x][y] : 0;
               if (dr !== Infinity && dr > 0) {
                 intensity = Math.min(dr / 30.0, 1.0);
                 col = `rgba(168, 85, 247, ${intensity * 0.5})`;
@@ -2618,7 +3517,7 @@
       // 3D Depots (rotated)
       if (state.depots) {
         for (const d of state.depots) {
-          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation);
+          const { rx, ry } = getRotatedGrid(d.x, d.y, viewRotation, gw, gh);
           const p = toScreen(rx, ry, 0);
           ctx.save();
           ctx.fillStyle = "#f59e0b";
@@ -2638,13 +3537,13 @@
       // 3D Robots (Depth-sorted along rotated depth rx + ry)
       if (state.robots) {
         const sortedBots = state.robots.map(bot => {
-          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation);
+          const { rx, ry } = getRotatedGrid(bot.x, bot.y, viewRotation, gw, gh);
           return { bot, rx, ry, depth: rx + ry };
         }).sort((a, b) => a.depth - b.depth);
 
         for (const item of sortedBots) {
           const bot = item.bot;
-          const z = state.currentHeight ? state.currentHeight[bot.x][bot.y] : 0;
+          const z = state.currentHeight && state.currentHeight[bot.x] ? state.currentHeight[bot.x][bot.y] : 0;
           const p = toScreen(item.rx, item.ry, z);
           const s = Math.max(tileW * 0.22, 4);
 

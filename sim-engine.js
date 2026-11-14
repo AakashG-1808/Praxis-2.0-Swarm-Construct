@@ -16,7 +16,9 @@ const SimEngine = (function () {
   "use strict";
 
   // ── Grid & Physics Constants ──────────────────────────────────────────────
-  const GRID = 32;
+  let gridWidth = 32;
+  let gridHeight = 32;
+  let GRID = 32;
   const EVAP_RATE = 0.04; // Pheromone decay per tick: P = P * (1 - 0.04)
 
   const STATES = {
@@ -111,28 +113,32 @@ const SimEngine = (function () {
   ];
 
   // ── Grid Utilities ────────────────────────────────────────────────────────
-  function makeGrid(val) {
+  function makeGrid(val, w, h) {
+    w = w || gridWidth;
+    h = h || gridHeight;
     val = val || 0;
-    const g = new Array(GRID);
-    for (let x = 0; x < GRID; x++) {
-      g[x] = new Float64Array(GRID);
+    const g = new Array(w);
+    for (let x = 0; x < w; x++) {
+      g[x] = new Float64Array(h);
       if (val !== 0) {
-        for (let y = 0; y < GRID; y++) g[x][y] = val;
+        for (let y = 0; y < h; y++) g[x][y] = val;
       }
     }
     return g;
   }
 
-  function makeBoolGrid() {
-    const g = new Array(GRID);
-    for (let x = 0; x < GRID; x++) {
-      g[x] = new Uint8Array(GRID);
+  function makeBoolGrid(w, h) {
+    w = w || gridWidth;
+    h = h || gridHeight;
+    const g = new Array(w);
+    for (let x = 0; x < w; x++) {
+      g[x] = new Uint8Array(h);
     }
     return g;
   }
 
   function inBounds(x, y) {
-    return x >= 0 && x < GRID && y >= 0 && y < GRID;
+    return x >= 0 && x < gridWidth && y >= 0 && y < gridHeight;
   }
 
   function manhattanDist(x0, y0, x1, y1) {
@@ -147,7 +153,15 @@ const SimEngine = (function () {
    */
   function walledRoom() {
     const t = makeGrid(0);
-    const x0 = 6, x1 = 25, y0 = 9, y1 = 22;
+    let x0 = 6, x1 = 25, y0 = 9, y1 = 22;
+    if (gridWidth !== 32 || gridHeight !== 32) {
+      const marginX = Math.max(3, Math.round(gridWidth * 0.1875));
+      const marginY = Math.max(3, Math.round(gridHeight * 0.28));
+      x0 = marginX;
+      x1 = gridWidth - marginX - 1;
+      y0 = marginY;
+      y1 = gridHeight - marginY - 1;
+    }
 
     // North wall
     for (let x = x0; x <= x1; x++) t[x][y0] = 2;
@@ -182,27 +196,35 @@ const SimEngine = (function () {
 
   /**
    * 2. Stepped Pyramid
-   * Concentric rectangular rings of height 1, 2, 3 centered at (16, 16).
+   * Concentric rectangular rings of height 1, 2, 3 centered at grid center.
    */
   function steppedPyramid() {
     const t = makeGrid(0);
-    const cx = 16, cy = 16;
+    const cx = Math.floor(gridWidth / 2);
+    const cy = Math.floor(gridHeight / 2);
+    let r1 = 8, r2 = 5, r3 = 2;
+    if (gridWidth !== 32 || gridHeight !== 32) {
+      const minHalf = Math.min(Math.floor(gridWidth / 2), Math.floor(gridHeight / 2));
+      r1 = Math.max(6, minHalf - 3);
+      r2 = Math.max(4, Math.round(r1 * 0.625));
+      r3 = Math.max(2, Math.round(r1 * 0.25));
+    }
 
-    // Outer ring radius 8 -> height 1
-    for (let x = cx - 8; x <= cx + 8; x++) {
-      for (let y = cy - 8; y <= cy + 8; y++) {
+    // Outer ring radius r1 -> height 1
+    for (let x = cx - r1; x <= cx + r1; x++) {
+      for (let y = cy - r1; y <= cy + r1; y++) {
         if (inBounds(x, y)) t[x][y] = 1;
       }
     }
-    // Middle ring radius 5 -> height 2
-    for (let x = cx - 5; x <= cx + 5; x++) {
-      for (let y = cy - 5; y <= cy + 5; y++) {
+    // Middle ring radius r2 -> height 2
+    for (let x = cx - r2; x <= cx + r2; x++) {
+      for (let y = cy - r2; y <= cy + r2; y++) {
         if (inBounds(x, y)) t[x][y] = 2;
       }
     }
-    // Inner ring radius 2 -> height 3
-    for (let x = cx - 2; x <= cx + 2; x++) {
-      for (let y = cy - 2; y <= cy + 2; y++) {
+    // Inner ring radius r3 -> height 3
+    for (let x = cx - r3; x <= cx + r3; x++) {
+      for (let y = cy - r3; y <= cy + r3; y++) {
         if (inBounds(x, y)) t[x][y] = 3;
       }
     }
@@ -215,43 +237,59 @@ const SimEngine = (function () {
    */
   function cdacComplex() {
     const t = makeGrid(0);
+    if (gridWidth === 32 && gridHeight === 32) {
+      function hWall(x0, x1, y, h) { for (let x = x0; x <= x1; x++) if (inBounds(x, y)) t[x][y] = h; }
+      function vWall(x, y0, y1, h) { for (let y = y0; y <= y1; y++) if (inBounds(x, y)) t[x][y] = h; }
 
-    function hWall(x0, x1, y, h) {
-      for (let x = x0; x <= x1; x++) if (inBounds(x, y)) t[x][y] = h;
+      // Bunker A (West Module): [4, 13] x [7, 17]
+      hWall(4, 13, 7, 2);
+      hWall(4, 13, 17, 2);
+      vWall(4, 7, 17, 2);
+      vWall(13, 7, 17, 2);
+      t[4][12] = 0; // West portal doorway
+
+      // Bunker B (East Module): [18, 27] x [7, 17]
+      hWall(18, 27, 7, 2);
+      hWall(18, 27, 17, 2);
+      vWall(18, 7, 17, 2);
+      vWall(27, 7, 17, 2);
+      t[27][12] = 0; // East portal doorway
+
+      // Connecting Logistics Corridor between A and B: y=11 and y=13, x in [13, 18]
+      hWall(13, 18, 11, 2);
+      hWall(13, 18, 13, 2);
+      t[13][12] = 0; // Inner opening into Bunker A
+      t[18][12] = 0; // Inner opening into Bunker B
+
+      // Corner reinforcement pillars (height 3)
+      const pillars = [
+        [4, 7], [13, 7], [4, 17], [13, 17],
+        [18, 7], [27, 7], [18, 17], [27, 17],
+        [8, 12], [23, 12] // Central internal support pillars
+      ];
+      for (const [px, py] of pillars) {
+        if (inBounds(px, py)) t[px][py] = 3;
+      }
+      return t;
     }
-    function vWall(x, y0, y1, h) {
-      for (let y = y0; y <= y1; y++) if (inBounds(x, y)) t[x][y] = h;
-    }
 
-    // Bunker A (West Module): [4, 13] x [7, 17]
-    hWall(4, 13, 7, 2);
-    hWall(4, 13, 17, 2);
-    vWall(4, 7, 17, 2);
-    vWall(13, 7, 17, 2);
-    t[4][12] = 0; // West portal doorway
+    // Dynamic resolution scaling
+    const sx = gridWidth / 32;
+    const sy = gridHeight / 32;
+    function sxC(x) { return Math.min(gridWidth - 1, Math.round(x * sx)); }
+    function syC(y) { return Math.min(gridHeight - 1, Math.round(y * sy)); }
+    function hWall(x0, x1, y, h) { for (let x = sxC(x0); x <= sxC(x1); x++) if (inBounds(x, syC(y))) t[x][syC(y)] = h; }
+    function vWall(x, y0, y1, h) { for (let y = syC(y0); y <= syC(y1); y++) if (inBounds(sxC(x), y)) t[sxC(x)][y] = h; }
 
-    // Bunker B (East Module): [18, 27] x [7, 17]
-    hWall(18, 27, 7, 2);
-    hWall(18, 27, 17, 2);
-    vWall(18, 7, 17, 2);
-    vWall(27, 7, 17, 2);
-    t[27][12] = 0; // East portal doorway
-
-    // Connecting Logistics Corridor between A and B: y=11 and y=13, x in [13, 18]
-    hWall(13, 18, 11, 2);
-    hWall(13, 18, 13, 2);
-    t[13][12] = 0; // Inner opening into Bunker A
-    t[18][12] = 0; // Inner opening into Bunker B
-
-    // Corner reinforcement pillars (height 3)
+    hWall(4, 13, 7, 2); hWall(4, 13, 17, 2); vWall(4, 7, 17, 2); vWall(13, 7, 17, 2); t[sxC(4)][syC(12)] = 0;
+    hWall(18, 27, 7, 2); hWall(18, 27, 17, 2); vWall(18, 7, 17, 2); vWall(27, 7, 17, 2); t[sxC(27)][syC(12)] = 0;
+    hWall(13, 18, 11, 2); hWall(13, 18, 13, 2); t[sxC(13)][syC(12)] = 0; t[sxC(18)][syC(12)] = 0;
     const pillars = [
       [4, 7], [13, 7], [4, 17], [13, 17],
       [18, 7], [27, 7], [18, 17], [27, 17],
-      [8, 12], [23, 12] // Central internal support pillars
+      [8, 12], [23, 12]
     ];
-    for (const [px, py] of pillars) {
-      if (inBounds(px, py)) t[px][py] = 3;
-    }
+    for (const [px, py] of pillars) if (inBounds(sxC(px), syC(py))) t[sxC(px)][syC(py)] = 3;
     return t;
   }
 
@@ -259,40 +297,53 @@ const SimEngine = (function () {
    * 4. C-DAC Logo / Typography Preset
    * Block typography "C - D - A - C" with corner reinforcement pillars.
    */
-  function cdacLogoBlueprint() {
-    const t = makeGrid(0);
-    function rect(x0, y0, w, h, val) {
-      for (let x = x0; x < x0 + w; x++) {
-        for (let y = y0; y < y0 + h; y++) {
-          if (inBounds(x, y)) t[x][y] = val;
+  function cdacLogoBlueprint(w, h) {
+    w = w || gridWidth;
+    h = h || gridHeight;
+    const t = makeGrid(0, w, h);
+    const sx = w / 32;
+    const sy = h / 32;
+    function rect(x0, y0, bw, bh, val) {
+      const rx0 = Math.round(x0 * sx);
+      const ry0 = Math.round(y0 * sy);
+      const rw = Math.max(1, Math.round(bw * sx));
+      const rh = Math.max(1, Math.round(bh * sy));
+      for (let x = rx0; x < rx0 + rw; x++) {
+        for (let y = ry0; y < ry0 + rh; y++) {
+          if (x >= 0 && x < w && y >= 0 && y < h) t[x][y] = val;
         }
       }
+    }
+    function pt(x, y, val) {
+      const rx = Math.min(w - 1, Math.round(x * sx));
+      const ry = Math.min(h - 1, Math.round(y * sy));
+      if (rx >= 0 && rx < w && ry >= 0 && ry < h) t[rx][ry] = val;
     }
     // C1: x: 3..7, y: 11..20
     rect(3, 11, 5, 2, 2);
     rect(3, 19, 5, 2, 2);
     rect(3, 11, 2, 10, 2);
-    t[3][11] = 3; t[7][11] = 3; t[3][20] = 3; t[7][20] = 3;
+    pt(3, 11, 3); pt(7, 11, 3); pt(3, 20, 3); pt(7, 20, 3);
 
     // D: x: 9..14, y: 11..20
     rect(9, 11, 2, 10, 2);
     rect(9, 11, 4, 2, 2);
     rect(9, 19, 4, 2, 2);
     rect(13, 13, 2, 6, 2);
-    t[9][11] = 3; t[9][20] = 3;
+    pt(9, 11, 3); pt(9, 20, 3);
 
     // A: x: 16..21, y: 11..20
     rect(16, 11, 2, 10, 2);
     rect(20, 11, 2, 10, 2);
     rect(16, 11, 6, 2, 2);
     rect(16, 15, 6, 2, 2);
-    t[16][11] = 3; t[21][11] = 3;
+    pt(16, 11, 3); pt(21, 11, 3);
 
     // C2: x: 23..27, y: 11..20
     rect(23, 11, 5, 2, 2);
     rect(23, 19, 5, 2, 2);
     rect(23, 11, 2, 10, 2);
-    t[23][11] = 3; t[27][11] = 3; t[23][20] = 3; t[27][20] = 3;
+    pt(23, 11, 3); pt(27, 11, 3); pt(23, 20, 3); pt(27, 20, 3);
 
     return t;
   }
@@ -301,28 +352,41 @@ const SimEngine = (function () {
    * 5. PES University Logo Preset
    * Block typography "P - E - S" with height 2 walls and height 3 crowns.
    */
-  function pesLogoBlueprint() {
-    const t = makeGrid(0);
-    function rect(x0, y0, w, h, val) {
-      for (let x = x0; x < x0 + w; x++) {
-        for (let y = y0; y < y0 + h; y++) {
-          if (inBounds(x, y)) t[x][y] = val;
+  function pesLogoBlueprint(w, h) {
+    w = w || gridWidth;
+    h = h || gridHeight;
+    const t = makeGrid(0, w, h);
+    const sx = w / 32;
+    const sy = h / 32;
+    function rect(x0, y0, bw, bh, val) {
+      const rx0 = Math.round(x0 * sx);
+      const ry0 = Math.round(y0 * sy);
+      const rw = Math.max(1, Math.round(bw * sx));
+      const rh = Math.max(1, Math.round(bh * sy));
+      for (let x = rx0; x < rx0 + rw; x++) {
+        for (let y = ry0; y < ry0 + rh; y++) {
+          if (x >= 0 && x < w && y >= 0 && y < h) t[x][y] = val;
         }
       }
+    }
+    function pt(x, y, val) {
+      const rx = Math.min(w - 1, Math.round(x * sx));
+      const ry = Math.min(h - 1, Math.round(y * sy));
+      if (rx >= 0 && rx < w && ry >= 0 && ry < h) t[rx][ry] = val;
     }
     // P: x: 5..10, y: 10..21
     rect(5, 10, 2, 12, 2);
     rect(5, 10, 6, 2, 2);
     rect(5, 15, 6, 2, 2);
     rect(9, 10, 2, 6, 2);
-    t[5][10] = 3; t[10][10] = 3; t[5][21] = 3;
+    pt(5, 10, 3); pt(10, 10, 3); pt(5, 21, 3);
 
     // E: x: 13..18, y: 10..21
     rect(13, 10, 2, 12, 2);
     rect(13, 10, 6, 2, 2);
     rect(13, 15, 5, 2, 2);
     rect(13, 20, 6, 2, 2);
-    t[13][10] = 3; t[18][10] = 3; t[13][21] = 3; t[18][21] = 3;
+    pt(13, 10, 3); pt(18, 10, 3); pt(13, 21, 3); pt(18, 21, 3);
 
     // S: x: 21..26, y: 10..21
     rect(21, 10, 6, 2, 2);
@@ -330,7 +394,7 @@ const SimEngine = (function () {
     rect(21, 15, 6, 2, 2);
     rect(25, 15, 2, 6, 2);
     rect(21, 20, 6, 2, 2);
-    t[21][10] = 3; t[26][10] = 3; t[21][21] = 3; t[26][21] = 3;
+    pt(21, 10, 3); pt(26, 10, 3); pt(21, 21, 3); pt(26, 21, 3);
 
     return t;
   }
@@ -345,22 +409,17 @@ const SimEngine = (function () {
   function compileBuildPhase(name, th) {
     const bp = makeBoolGrid();
     if (name === "walledRoom") {
-      const cx = 15, cy = 15;
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) {
           if (th[x][y] > 0) {
-            // Central 3x3 pillar is phase 0; perimeter walls are phase 1
-            if (x >= cx - 1 && x <= cx + 1 && y >= cy - 1 && y <= cy + 1) {
-              bp[x][y] = 0;
-            } else {
-              bp[x][y] = 1;
-            }
+            // Central height-3 pillar is phase 0; perimeter walls are phase 1
+            bp[x][y] = (th[x][y] === 3) ? 0 : 1;
           }
         }
       }
     } else {
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) {
           bp[x][y] = 0;
         }
       }
@@ -370,8 +429,8 @@ const SimEngine = (function () {
 
   function isPhaseComplete(phase) {
     if (!buildPhase || !targetHeight || !currentHeight) return true;
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         if (buildPhase[x][y] === phase && currentHeight[x][y] < targetHeight[x][y]) {
           return false;
         }
@@ -394,8 +453,8 @@ const SimEngine = (function () {
     }
     if (currentBlueprintName === "walledRoom" && buildPhase) {
       let pTot = 0, pPlc = 0, wTot = 0, wPlc = 0;
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) {
           if (buildPhase[x][y] === 0 && targetHeight[x][y] > 0) {
             pTot += targetHeight[x][y];
             pPlc += currentHeight[x][y];
@@ -428,8 +487,9 @@ const SimEngine = (function () {
    */
   function compileDependencyRank(th, dps, obs) {
     const dr = makeGrid(Infinity);
-    const qx = new Int16Array(GRID * GRID);
-    const qy = new Int16Array(GRID * GRID);
+    const totalCells = gridWidth * gridHeight;
+    const qx = new Int16Array(totalCells);
+    const qy = new Int16Array(totalCells);
     let head = 0, tail = 0;
 
     for (const d of dps) {
@@ -470,8 +530,8 @@ const SimEngine = (function () {
     // Ensure geometric interior of solid multi-height blocks (like the 3x3 pillar)
     // has strictly higher dependency rank than its surrounding outer ring,
     // guaranteeing inside-out build order under the TERMES anti-trap constraint.
-    for (let x = 1; x < GRID - 1; x++) {
-      for (let y = 1; y < GRID - 1; y++) {
+    for (let x = 1; x < gridWidth - 1; x++) {
+      for (let y = 1; y < gridHeight - 1; y++) {
         if (th[x][y] === 3) {
           let surroundingWalls = 0;
           for (let d = 0; d < 4; d++) {
@@ -529,8 +589,8 @@ const SimEngine = (function () {
     const reach = computeTraversableReachability(heightGrid);
     const unreachable = [];
     const activePhase = getCurrentBuildPhase();
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         if (targetHeight[x][y] > heightGrid[x][y] && (!buildPhase || buildPhase[x][y] <= activePhase)) {
           let hasReachableStand = false;
           for (const [ddx, ddy] of DIR4) {
@@ -553,14 +613,14 @@ const SimEngine = (function () {
 
   function findSafeStagingCell(bx, by) {
     const tempH = makeGrid(0);
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) tempH[x][y] = currentHeight[x][y];
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) tempH[x][y] = currentHeight[x][y];
     }
     tempH[bx][by] = 99;
     let reachExt = computeTraversableReachability(tempH);
     let hasReach = false;
-    for (let x = 0; x < GRID && !hasReach; x++) {
-      for (let y = 0; y < GRID && !hasReach; y++) {
+    for (let x = 0; x < gridWidth && !hasReach; x++) {
+      for (let y = 0; y < gridHeight && !hasReach; y++) {
         if (reachExt[x][y]) hasReach = true;
       }
     }
@@ -607,12 +667,12 @@ const SimEngine = (function () {
 
     // Clone current height
     const tempH = makeGrid(0);
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) tempH[x][y] = currentHeight[x][y];
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) tempH[x][y] = currentHeight[x][y];
     }
 
-    for (let bx = 0; bx < GRID; bx++) {
-      for (let by = 0; by < GRID; by++) {
+    for (let bx = 0; bx < gridWidth; bx++) {
+      for (let by = 0; by < gridHeight; by++) {
         if (currentHeight[bx][by] <= 0) continue;
         if (robotGrid[bx][by] !== null) continue;
 
@@ -750,8 +810,8 @@ const SimEngine = (function () {
     const mismatches = [];
     let totalTarget = 0;
     let totalCurrent = 0;
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         totalTarget += targetHeight[x][y];
         totalCurrent += currentHeight[x][y];
         if (currentHeight[x][y] !== targetHeight[x][y]) {
@@ -760,11 +820,16 @@ const SimEngine = (function () {
       }
     }
     const staged = relocatedBlocks.filter(r => r.status === "staged");
+    const isExact = mismatches.length === 0 && staged.length === 0;
     return {
-      exactMatch: mismatches.length === 0 && staged.length === 0,
+      exactMatch: isExact,
+      isExactMatch: isExact,
       totalTargetBlocks: totalTarget,
+      totalBlueprintBlocks: totalTarget,
       totalCurrentBlocks: totalCurrent,
+      placedBlocks: totalCurrent,
       mismatchedCells: mismatches,
+      mismatches: mismatches,
       activeRelocations: staged.length,
       totalRelocations: relocatedBlocks.length,
       relocationLog: relocationLog.slice(),
@@ -1151,21 +1216,23 @@ const SimEngine = (function () {
    * Guides carrying robots through doorways, around high walls, and directly to the active build frontier.
    */
   function updateUnbuiltGradient() {
-    if (!unbuiltDistGrid) unbuiltDistGrid = makeGrid(999);
-    else {
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) unbuiltDistGrid[x][y] = 999;
+    if (!unbuiltDistGrid || unbuiltDistGrid.length !== gridWidth || unbuiltDistGrid[0].length !== gridHeight) {
+      unbuiltDistGrid = makeGrid(999);
+    } else {
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) unbuiltDistGrid[x][y] = 999;
       }
     }
 
-    const qx = new Int16Array(GRID * GRID);
-    const qy = new Int16Array(GRID * GRID);
+    const totalCells = gridWidth * gridHeight;
+    const qx = new Int16Array(totalCells);
+    const qy = new Int16Array(totalCells);
     let head = 0, tail = 0;
 
     const activePhase = getCurrentBuildPhase();
     let standCount = 0;
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         if (targetHeight[x][y] > currentHeight[x][y] && (!buildPhase || buildPhase[x][y] <= activePhase)) {
           if (isActiveRelocatedCell(x, y)) continue;
           // Seed all adjacent placement spots where robots can stand to place this block
@@ -1239,8 +1306,8 @@ const SimEngine = (function () {
     // If no unbuilt cells remain reachable, follow decreasing depRank back to depot
     let hasUnbuilt = false;
     if (unbuiltDistGrid) {
-      for (let x = 0; x < GRID && !hasUnbuilt; x++) {
-        for (let y = 0; y < GRID && !hasUnbuilt; y++) {
+      for (let x = 0; x < gridWidth && !hasUnbuilt; x++) {
+        for (let y = 0; y < gridHeight && !hasUnbuilt; y++) {
           if (unbuiltDistGrid[x][y] < 900) hasUnbuilt = true;
         }
       }
@@ -1627,17 +1694,17 @@ const SimEngine = (function () {
     const w = 0.7, c1 = 1.5, c2 = 1.5;
 
     const bpCells = [];
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         if (th[x][y] > 0) bpCells.push({ x, y, h: th[x][y] });
       }
     }
     if (bpCells.length === 0) {
       depots = [
-        { x: 2, y: 2 },
-        { x: 29, y: 2 },
-        { x: 2, y: 29 },
-        { x: 29, y: 29 },
+        { x: 3, y: 3 },
+        { x: gridWidth - 4, y: 3 },
+        { x: 3, y: gridHeight - 4 },
+        { x: gridWidth - 4, y: gridHeight - 4 },
       ];
       return depots;
     }
@@ -1646,7 +1713,7 @@ const SimEngine = (function () {
     for (const c of bpCells) totalWeight += c.h;
 
     // Compute blueprint wall bounding box
-    let minBx = GRID, maxBx = 0, minBy = GRID, maxBy = 0;
+    let minBx = gridWidth, maxBx = 0, minBy = gridHeight, maxBy = 0;
     for (const c of bpCells) {
       if (c.x < minBx) minBx = c.x;
       if (c.x > maxBx) maxBx = c.x;
@@ -1700,9 +1767,9 @@ const SimEngine = (function () {
     // Initialize particles across the outer perimeter (well outside bounding box)
     const particles = [];
     const perimeterSeeds = [
-      [{x: 4, y: 4}, {x: 27, y: 4}, {x: 4, y: 27}, {x: 27, y: 27}],
-      [{x: 16, y: 3}, {x: 28, y: 16}, {x: 16, y: 28}, {x: 3, y: 16}],
-      [{x: 3, y: 3}, {x: 28, y: 3}, {x: 3, y: 28}, {x: 28, y: 28}],
+      [{ x: 3, y: 3 }, { x: gridWidth - 4, y: 3 }, { x: 3, y: gridHeight - 4 }, { x: gridWidth - 4, y: gridHeight - 4 }],
+      [{ x: Math.floor(gridWidth / 2), y: 3 }, { x: gridWidth - 4, y: Math.floor(gridHeight / 2) }, { x: Math.floor(gridWidth / 2), y: gridHeight - 4 }, { x: 3, y: Math.floor(gridHeight / 2) }],
+      [{ x: 4, y: 4 }, { x: gridWidth - 5, y: 4 }, { x: 4, y: gridHeight - 5 }, { x: gridWidth - 5, y: gridHeight - 5 }],
     ];
 
     for (let i = 0; i < numParticles; i++) {
@@ -1713,7 +1780,7 @@ const SimEngine = (function () {
       for (let d = 0; d < numDepots; d++) {
         const sx = seedPattern[d].x + (random() - 0.5) * 4;
         const sy = seedPattern[d].y + (random() - 0.5) * 4;
-        pos.push({ x: Math.max(2, Math.min(GRID - 3, sx)), y: Math.max(2, Math.min(GRID - 3, sy)) });
+        pos.push({ x: Math.max(2, Math.min(gridWidth - 3, sx)), y: Math.max(2, Math.min(gridHeight - 3, sy)) });
         vel.push({ x: (random() - 0.5) * 2, y: (random() - 0.5) * 2 });
       }
 
@@ -1746,8 +1813,8 @@ const SimEngine = (function () {
           part.vel[d].x = w * part.vel[d].x + c1 * r1 * (part.bestPos[d].x - part.pos[d].x) + c2 * r2 * (gBest[d].x - part.pos[d].x);
           part.vel[d].y = w * part.vel[d].y + c1 * r1 * (part.bestPos[d].y - part.pos[d].y) + c2 * r2 * (gBest[d].y - part.pos[d].y);
 
-          part.pos[d].x = Math.max(2, Math.min(GRID - 3, part.pos[d].x + part.vel[d].x));
-          part.pos[d].y = Math.max(2, Math.min(GRID - 3, part.pos[d].y + part.vel[d].y));
+          part.pos[d].x = Math.max(2, Math.min(gridWidth - 3, part.pos[d].x + part.vel[d].x));
+          part.pos[d].y = Math.max(2, Math.min(gridHeight - 3, part.pos[d].y + part.vel[d].y));
         }
 
         const rounded = part.pos.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
@@ -1766,13 +1833,13 @@ const SimEngine = (function () {
 
     // Finalize rounded positions, strictly guaranteed outside bounding box and off-structure
     depots = gBest.map(p => {
-      let x = Math.max(2, Math.min(GRID - 3, Math.round(p.x)));
-      let y = Math.max(2, Math.min(GRID - 3, Math.round(p.y)));
+      let x = Math.max(2, Math.min(gridWidth - 3, Math.round(p.x)));
+      let y = Math.max(2, Math.min(gridHeight - 3, Math.round(p.y)));
 
       // If inside bounding box margin, push out to closest perimeter
       if (x >= minBx - 2 && x <= maxBx + 2 && y >= minBy - 2 && y <= maxBy + 2) {
         if (x < (minBx + maxBx) / 2) x = Math.max(2, minBx - 3);
-        else x = Math.min(GRID - 3, maxBx + 3);
+        else x = Math.min(gridWidth - 3, maxBx + 3);
       }
 
       // If landed on obstacle, shift outward
@@ -1860,6 +1927,26 @@ const SimEngine = (function () {
     blocksPlaced = 0;
     throughputBuffer = [];
 
+    // Dynamically adjust grid dimensions from config or custom heightmap
+    if (config.customHeightmap && Array.isArray(config.customHeightmap) && config.customHeightmap.length > 0) {
+      gridWidth = config.customHeightmap.length;
+      gridHeight = config.customHeightmap[0].length;
+      GRID = Math.max(gridWidth, gridHeight);
+    } else if (config.gridWidth && config.gridHeight) {
+      gridWidth = config.gridWidth;
+      gridHeight = config.gridHeight;
+      GRID = Math.max(gridWidth, gridHeight);
+    } else if (config.gridSize) {
+      const gs = typeof config.gridSize === "number" ? config.gridSize : (config.gridSize.width || 32);
+      gridWidth = gs;
+      gridHeight = (typeof config.gridSize === "object" && config.gridSize.height) ? config.gridSize.height : gs;
+      GRID = Math.max(gridWidth, gridHeight);
+    } else {
+      gridWidth = 32;
+      gridHeight = 32;
+      GRID = 32;
+    }
+
     currentHeight = makeGrid(0);
     obstacles = makeBoolGrid();
     pheromoneBuild = makeGrid(0.01);
@@ -1893,8 +1980,8 @@ const SimEngine = (function () {
     buildPhase = compileBuildPhase(bpName, targetHeight);
 
     totalBlocks = 0;
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         totalBlocks += targetHeight[x][y];
       }
     }
@@ -1909,29 +1996,35 @@ const SimEngine = (function () {
 
     ticksSinceLastPlacement = 0;
 
-    // Initial Depots: default to outside quadrant depots (4,4), (4,27), (27,4), (27,27)
+    // Initial Depots: default to outside quadrant depots
     if (config.depots && Array.isArray(config.depots) && config.depots !== "auto") {
       depots = config.depots.map(d => ({ x: d.x | 0, y: d.y | 0 }));
     } else {
-      depots = DEFAULT_DEPOTS.map(d => ({ x: d.x, y: d.y }));
+      depots = [
+        { x: 4, y: 4 },
+        { x: 4, y: gridHeight - 5 },
+        { x: gridWidth - 5, y: 4 },
+        { x: gridWidth - 5, y: gridHeight - 5 },
+      ];
     }
 
     depRank = compileDependencyRank(targetHeight, depots, obstacles);
 
     // Robot occupancy grid
-    robotGrid = new Array(GRID);
-    for (let x = 0; x < GRID; x++) {
-      robotGrid[x] = new Array(GRID).fill(null);
+    robotGrid = new Array(gridWidth);
+    for (let x = 0; x < gridWidth; x++) {
+      robotGrid[x] = new Array(gridHeight).fill(null);
     }
 
     // Spawn robots around depots
     const numRobots = config.numRobots || 20;
     robots = [];
 
+    const maxRad = Math.max(gridWidth, gridHeight);
     for (let i = 0; i < numRobots; i++) {
       const depot = depots[i % depots.length];
       let placed = false;
-      for (let radius = 0; radius < GRID && !placed; radius++) {
+      for (let radius = 0; radius < maxRad && !placed; radius++) {
         for (let dx = -radius; dx <= radius && !placed; dx++) {
           for (let dy = -radius; dy <= radius && !placed; dy++) {
             if (Math.abs(dx) !== radius && Math.abs(dy) !== radius) continue;
@@ -1961,8 +2054,8 @@ const SimEngine = (function () {
         }
       }
       if (!placed) {
-        for (let x = 0; x < GRID && !placed; x++) {
-          for (let y = 0; y < GRID && !placed; y++) {
+        for (let x = 0; x < gridWidth && !placed; x++) {
+          for (let y = 0; y < gridHeight && !placed; y++) {
             if (!obstacles[x][y] && targetHeight[x][y] === 0 && robotGrid[x][y] === null) {
               const role = heterogeneousRoles ? ((i % 5 < 2) ? "carrier" : "builder") : "builder";
               const bot = {
@@ -2014,8 +2107,8 @@ const SimEngine = (function () {
     stepMovingHazard();
 
     // 1. Evaporate pheromones
-    for (let x = 0; x < GRID; x++) {
-      for (let y = 0; y < GRID; y++) {
+    for (let x = 0; x < gridWidth; x++) {
+      for (let y = 0; y < gridHeight; y++) {
         pheromoneBuild[x][y] = Math.max(0.001, pheromoneBuild[x][y] * (1.0 - EVAP_RATE));
         pheromoneTrail[x][y] = Math.max(0.001, pheromoneTrail[x][y] * (1.0 - EVAP_RATE));
         trafficCount[x][y] = Math.max(0, trafficCount[x][y] * (1.0 - EVAP_RATE));
@@ -2084,8 +2177,10 @@ const SimEngine = (function () {
 
   function getState() {
     return {
-      gridSize: GRID,
-      grid: GRID,
+      gridWidth,
+      gridHeight,
+      gridSize: Math.max(gridWidth, gridHeight),
+      grid: Math.max(gridWidth, gridHeight),
       blueprint: currentBlueprintName,
       targetHeight,
       currentHeight,
@@ -2156,6 +2251,27 @@ const SimEngine = (function () {
     cdacLogoBlueprint,
     pesLogoBlueprint,
 
+    // Dimensions
+    getGridDimensions: function () {
+      return { width: gridWidth, height: gridHeight };
+    },
+    setGridDimensions: function (w, h) {
+      const nw = Math.max(16, Math.min(128, parseInt(w) || 32));
+      const nh = Math.max(16, Math.min(128, parseInt(h || w) || nw));
+      gridWidth = nw;
+      gridHeight = nh;
+      GRID = Math.max(nw, nh);
+      init({
+        blueprint: currentBlueprintName,
+        gridWidth: nw,
+        gridHeight: nh,
+        numRobots: robots.length || 20,
+        acoEnabled: acoMode,
+        relocationEnabled: relocationEnabled
+      });
+      return { width: gridWidth, height: gridHeight };
+    },
+
     // Runtime queries & setters
     getTotalBlocks: function () {
       return totalBlocks;
@@ -2185,27 +2301,46 @@ const SimEngine = (function () {
         throw new Error(`Invalid blueprint preset '${name}'. Valid presets are: ${validBlueprints.join(", ")}`);
       }
       currentBlueprintName = name;
-      if (name === "steppedPyramid") targetHeight = steppedPyramid();
-      else if (name === "cdacComplex") targetHeight = cdacComplex();
-      else if (name === "cdacLogo") targetHeight = cdacLogoBlueprint();
-      else if (name === "pesLogo") targetHeight = pesLogoBlueprint();
-      else targetHeight = walledRoom();
+      if (name === "steppedPyramid") targetHeight = steppedPyramid(gridWidth, gridHeight);
+      else if (name === "cdacComplex") targetHeight = cdacComplex(gridWidth, gridHeight);
+      else if (name === "cdacLogo") targetHeight = cdacLogoBlueprint(gridWidth, gridHeight);
+      else if (name === "pesLogo") targetHeight = pesLogoBlueprint(gridWidth, gridHeight);
+      else targetHeight = walledRoom(gridWidth, gridHeight);
 
       buildPhase = compileBuildPhase(name, targetHeight);
 
       totalBlocks = 0;
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) totalBlocks += targetHeight[x][y];
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) totalBlocks += targetHeight[x][y];
       }
       depRank = compileDependencyRank(targetHeight, depots, obstacles);
       return true;
     },
     setCustomBlueprint: function (grid, name) {
       currentBlueprintName = name || "customBlueprint";
-      targetHeight = makeGrid(0);
+      if (grid && Array.isArray(grid) && grid.length > 0) {
+        const w = grid.length;
+        const h = Array.isArray(grid[0]) || (grid[0] && grid[0].length !== undefined) ? grid[0].length : w;
+        if (w !== gridWidth || h !== gridHeight) {
+          gridWidth = w;
+          gridHeight = h;
+          GRID = Math.max(w, h);
+          init({
+            blueprint: "custom",
+            customHeightmap: grid,
+            gridWidth: w,
+            gridHeight: h,
+            numRobots: robots.length || 20,
+            acoEnabled: acoMode,
+            relocationEnabled: relocationEnabled
+          });
+          return;
+        }
+      }
+      targetHeight = makeGrid(0, gridWidth, gridHeight);
       totalBlocks = 0;
-      for (let x = 0; x < GRID; x++) {
-        for (let y = 0; y < GRID; y++) {
+      for (let x = 0; x < gridWidth; x++) {
+        for (let y = 0; y < gridHeight; y++) {
           const h = Math.min(3, Math.max(0, Math.round(grid && grid[x] ? (grid[x][y] || 0) : 0)));
           targetHeight[x][y] = h;
           totalBlocks += h;
