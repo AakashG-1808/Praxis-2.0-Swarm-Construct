@@ -72,9 +72,18 @@ const SimEngine = (function () {
   let tickCount = 0;
   let totalBlocks = 0;
   let blocksPlaced = 0;
+  let ticksSinceLastPlacement = 0;
   let throughputBuffer = [];
   let acoMode = true;
   let currentBlueprintName = "walledRoom";
+  let unbuiltDistGrid = null;
+
+  const DEFAULT_DEPOTS = [
+    { x: 4, y: 4 },
+    { x: 4, y: 27 },
+    { x: 27, y: 4 },
+    { x: 27, y: 27 },
+  ];
 
   // ── Grid Utilities ────────────────────────────────────────────────────────
   function makeGrid(val) {
@@ -176,8 +185,8 @@ const SimEngine = (function () {
   }
 
   /**
-   * 3. Multi-Room C-DAC Complex
-   * Non-trivial multi-room layout with internal partition wall, connecting corridor, and annex.
+   * 3. Twin Bunker Complex
+   * Dual reinforced bunker modules connected by a central logistics corridor with exterior access portals.
    */
   function cdacComplex() {
     const t = makeGrid(0);
@@ -189,48 +198,31 @@ const SimEngine = (function () {
       for (let y = y0; y <= y1; y++) if (inBounds(x, y)) t[x][y] = h;
     }
 
-    // Room A: [4, 13] x [4, 11]
-    hWall(4, 13, 4, 2);
-    hWall(4, 13, 11, 2);
-    vWall(4, 4, 11, 2);
-    vWall(13, 4, 11, 2);
+    // Bunker A (West Module): [4, 13] x [7, 17]
+    hWall(4, 13, 7, 2);
+    hWall(4, 13, 17, 2);
+    vWall(4, 7, 17, 2);
+    vWall(13, 7, 17, 2);
+    t[4][12] = 0; // West portal doorway
 
-    // Room B: [16, 25] x [4, 11]
-    hWall(16, 25, 4, 2);
-    hWall(16, 25, 11, 2);
-    vWall(16, 4, 11, 2);
-    vWall(25, 4, 11, 2);
+    // Bunker B (East Module): [18, 27] x [7, 17]
+    hWall(18, 27, 7, 2);
+    hWall(18, 27, 17, 2);
+    vWall(18, 7, 17, 2);
+    vWall(27, 7, 17, 2);
+    t[27][12] = 0; // East portal doorway
 
-    // Partition wall with doorway
-    vWall(14, 4, 11, 2);
-    vWall(15, 4, 11, 2);
-    t[14][7] = 0; t[14][8] = 0;
-    t[15][7] = 0; t[15][8] = 0;
-
-    // Corridor [8, 21] x [12, 13]
-    hWall(8, 21, 12, 2);
-    hWall(8, 21, 13, 2);
-    t[9][11] = 0; t[10][11] = 0;
-    t[19][11] = 0; t[20][11] = 0;
-
-    // Annex: [4, 18] x [14, 22]
-    hWall(4, 9, 14, 2);
-    hWall(4, 9, 22, 2);
-    vWall(4, 14, 22, 2);
-    vWall(9, 14, 18, 2);
-
-    hWall(10, 18, 19, 2);
-    hWall(10, 18, 22, 2);
-    vWall(18, 19, 22, 2);
-
-    t[9][19] = 0; t[9][20] = 0; t[9][21] = 0;
-    t[8][13] = 0; t[9][13] = 0;
+    // Connecting Logistics Corridor between A and B: y=11 and y=13, x in [13, 18]
+    hWall(13, 18, 11, 2);
+    hWall(13, 18, 13, 2);
+    t[13][12] = 0; // Inner opening into Bunker A
+    t[18][12] = 0; // Inner opening into Bunker B
 
     // Corner reinforcement pillars (height 3)
     const pillars = [
-      [4, 4], [13, 4], [4, 11], [13, 11],
-      [16, 4], [25, 4], [16, 11], [25, 11],
-      [4, 14], [4, 22], [18, 22], [18, 19]
+      [4, 7], [13, 7], [4, 17], [13, 17],
+      [18, 7], [27, 7], [18, 17], [27, 17],
+      [8, 12], [23, 12] // Central internal support pillars
     ];
     for (const [px, py] of pillars) {
       if (inBounds(px, py)) t[px][py] = 3;
@@ -245,28 +237,66 @@ const SimEngine = (function () {
    */
   function compileDependencyRank(th, dps, obs) {
     const dr = makeGrid(Infinity);
-    const queue = [];
-    let head = 0;
+    const qx = new Int16Array(GRID * GRID);
+    const qy = new Int16Array(GRID * GRID);
+    let head = 0, tail = 0;
 
     for (const d of dps) {
       const dx = d.x | 0, dy = d.y | 0;
       if (inBounds(dx, dy) && !obs[dx][dy]) {
         dr[dx][dy] = 0;
-        queue.push(dx, dy);
+        qx[tail] = dx;
+        qy[tail] = dy;
+        tail++;
       }
     }
 
-    while (head < queue.length) {
-      const cx = queue[head++];
-      const cy = queue[head++];
+    while (head < tail) {
+      const cx = qx[head];
+      const cy = qy[head];
+      head++;
       const nd = dr[cx][cy] + 1;
 
-      for (const [ddx, ddy] of DIR4) {
-        const nx = cx + ddx, ny = cy + ddy;
-        if (!inBounds(nx, ny) || obs[nx][ny]) continue;
-        if (nd < dr[nx][ny]) {
-          dr[nx][ny] = nd;
-          queue.push(nx, ny);
+      for (let i = 0; i < 4; i++) {
+        const nx = cx + DIR4[i][0];
+        const ny = cy + DIR4[i][1];
+        if (inBounds(nx, ny) && !obs[nx][ny]) {
+          if (nd < dr[nx][ny]) {
+            dr[nx][ny] = nd;
+            // TERMES climbing physics: robots can only walk / step across cells
+            // where height difference <= 1. Steep vertical barriers (> 1 block height jump)
+            // cannot be traversed through from ground level; robots must enter through openings.
+            if (Math.abs(th[nx][ny] - th[cx][cy]) <= 1) {
+              qx[tail] = nx;
+              qy[tail] = ny;
+              tail++;
+            }
+          }
+        }
+      }
+    }
+
+    // Ensure geometric interior of solid multi-height blocks (like the 3x3 pillar)
+    // has strictly higher dependency rank than its surrounding outer ring,
+    // guaranteeing inside-out build order under the TERMES anti-trap constraint.
+    for (let x = 1; x < GRID - 1; x++) {
+      for (let y = 1; y < GRID - 1; y++) {
+        if (th[x][y] === 3) {
+          let surroundingWalls = 0;
+          for (let d = 0; d < 4; d++) {
+            const nx = x + DIR4[d][0], ny = y + DIR4[d][1];
+            if (th[nx][ny] >= 2) surroundingWalls++;
+          }
+          if (surroundingWalls === 4) {
+            let maxNeighborRank = 0;
+            for (let d = 0; d < 4; d++) {
+              const nx = x + DIR4[d][0], ny = y + DIR4[d][1];
+              if (dr[nx][ny] > maxNeighborRank && dr[nx][ny] !== Infinity) {
+                maxNeighborRank = dr[nx][ny];
+              }
+            }
+            dr[x][y] = maxNeighborRank + 1;
+          }
         }
       }
     }
@@ -300,6 +330,10 @@ const SimEngine = (function () {
   function findPlacementCell(rx, ry) {
     let bestCell = null;
     let bestRank = -Infinity;
+    const remainingBlocks = totalBlocks - blocksPlaced;
+    // Anti-deadlock relaxation: if near end-of-build (<= 10 blocks left) or stalled for 20+ ticks,
+    // relax strict dep_rank anti-trap on doorway/partition edges so final blocks build cleanly and fast.
+    const relaxAntiTrap = (remainingBlocks <= 10 && ticksSinceLastPlacement >= 10) || (ticksSinceLastPlacement >= 20);
 
     for (const [dx, dy] of DIR4) {
       const bx = rx + dx, by = ry + dy;
@@ -309,21 +343,23 @@ const SimEngine = (function () {
       if (obstacles[bx][by]) continue;
       if (robotGrid[bx][by] !== null) continue; // Cell must not be occupied by robot
 
-      // Inside-Out Anti-Trap Check
-      let trapped = false;
-      for (const [ddx, ddy] of DIR4) {
-        const nx = bx + ddx, ny = by + ddy;
-        if (!inBounds(nx, ny)) continue;
-        if (targetHeight[nx][ny] <= 0) continue;
-        if (depRank[nx][ny] <= depRank[bx][by]) continue; // Only check deeper inner cells
+      if (!relaxAntiTrap) {
+        // Inside-Out Anti-Trap Check
+        let trapped = false;
+        for (const [ddx, ddy] of DIR4) {
+          const nx = bx + ddx, ny = by + ddy;
+          if (!inBounds(nx, ny)) continue;
+          if (targetHeight[nx][ny] <= 0) continue;
+          if (depRank[nx][ny] <= depRank[bx][by]) continue; // Only check deeper inner cells
 
-        const requiredHeight = Math.min(targetHeight[nx][ny], currentHeight[bx][by] + 1);
-        if (currentHeight[nx][ny] < requiredHeight) {
-          trapped = true;
-          break;
+          const requiredHeight = Math.min(targetHeight[nx][ny], currentHeight[bx][by] + 1);
+          if (currentHeight[nx][ny] < requiredHeight) {
+            trapped = true;
+            break;
+          }
         }
+        if (trapped) continue;
       }
-      if (trapped) continue;
 
       const r = depRank[bx][by];
       if (r > bestRank) {
@@ -470,6 +506,71 @@ const SimEngine = (function () {
   }
 
   /**
+   * Multi-source topological BFS wavefront from all uncompleted target cells.
+   * Guides carrying robots through doorways, around high walls, and directly to the active build frontier.
+   */
+  function updateUnbuiltGradient() {
+    if (!unbuiltDistGrid) unbuiltDistGrid = makeGrid(999);
+    else {
+      for (let x = 0; x < GRID; x++) {
+        for (let y = 0; y < GRID; y++) unbuiltDistGrid[x][y] = 999;
+      }
+    }
+
+    const qx = new Int16Array(GRID * GRID);
+    const qy = new Int16Array(GRID * GRID);
+    let head = 0, tail = 0;
+
+    let standCount = 0;
+    for (let x = 0; x < GRID; x++) {
+      for (let y = 0; y < GRID; y++) {
+        if (targetHeight[x][y] > currentHeight[x][y]) {
+          // Seed all adjacent placement spots where robots can stand to place this block
+          for (let d = 0; d < 4; d++) {
+            const sx = x + DIR4[d][0];
+            const sy = y + DIR4[d][1];
+            if (inBounds(sx, sy) && !obstacles[sx][sy]) {
+              if (unbuiltDistGrid[sx][sy] !== 0) {
+                unbuiltDistGrid[sx][sy] = 0;
+                qx[tail] = sx;
+                qy[tail] = sy;
+                tail++;
+                standCount++;
+              }
+            }
+          }
+        }
+      }
+    }
+
+    if (standCount === 0) return 0;
+
+    while (head < tail) {
+      const cx = qx[head];
+      const cy = qy[head];
+      head++;
+      const nd = unbuiltDistGrid[cx][cy] + 1;
+
+      for (let d = 0; d < 4; d++) {
+        const nx = cx + DIR4[d][0];
+        const ny = cy + DIR4[d][1];
+        if (inBounds(nx, ny) && !obstacles[nx][ny]) {
+          // Traversal step: step height difference <= 1
+          if (Math.abs(currentHeight[nx][ny] - currentHeight[cx][cy]) <= 1) {
+            if (nd < unbuiltDistGrid[nx][ny]) {
+              unbuiltDistGrid[nx][ny] = nd;
+              qx[tail] = nx;
+              qy[tail] = ny;
+              tail++;
+            }
+          }
+        }
+      }
+    }
+    return standCount;
+  }
+
+  /**
    * STATE 2: CARRY_TO_BUILD
    * Move toward active build zones using ACO stigmergy + active build site attraction.
    */
@@ -484,51 +585,53 @@ const SimEngine = (function () {
       return;
     }
 
+    // Periodic deadlock / cyclic motion breaker: if wandering carrying block for > 70 ticks
+    if (robot.tripSteps > 70 && robot.tripSteps % 20 === 0) {
+      robot.state = STATES.YIELD_AND_BACKOFF;
+      robot.backoffSteps = 2 + Math.floor(random() * 2);
+      return;
+    }
+
+    // Dynamic exploration rate: starts at 0.25, increases if tripSteps > 40
+    let eps = 0.25;
+    if (robot.tripSteps > 40) {
+      eps = Math.min(0.85, 0.25 + (robot.tripSteps - 40) * 0.02);
+    }
+    const remainingBlocks = totalBlocks - blocksPlaced;
+    if (remainingBlocks <= 5) {
+      eps = Math.max(eps, 0.50);
+    }
+
     const shuffled = shuffleDir4();
     const candidates = [];
 
-    if (acoMode) {
-      // ACO Stigmergy Mode: Weighted choice based on trail pheromones, active build site spikes, and unbuilt targets
-      for (const [dx, dy] of shuffled) {
-        const nx = robot.x + dx, ny = robot.y + dy;
-        if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny)) {
+    for (const [dx, dy] of shuffled) {
+      const nx = robot.x + dx, ny = robot.y + dy;
+      if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny)) {
+        // Topological step distance to closest reachable unbuilt cell
+        const uDist = unbuiltDistGrid ? unbuiltDistGrid[nx][ny] : 999;
+        const unbuiltBeacon = 45.0 / (uDist + 1.0);
+
+        // Repel from fully completed structures so carrying robots never cluster on finished pillars
+        const isCompletedStructure = targetHeight[nx][ny] > 0 && currentHeight[nx][ny] >= targetHeight[nx][ny];
+        const stalePenalty = isCompletedStructure ? -20.0 : 0.0;
+
+        let score;
+        if (acoMode) {
           const trail = pheromoneTrail[nx][ny];
           const buildPhero = pheromoneBuild[nx][ny];
-
-          // Compute distance to nearest unbuilt blueprint cell
-          let minUnbuiltDist = 40;
-          for (let ux = Math.max(0, nx - 10); ux <= Math.min(GRID - 1, nx + 10); ux++) {
-            for (let uy = Math.max(0, ny - 10); uy <= Math.min(GRID - 1, ny + 10); uy++) {
-              if (targetHeight[ux][uy] > currentHeight[ux][uy]) {
-                const d = Math.abs(ux - nx) + Math.abs(uy - ny);
-                if (d < minUnbuiltDist) minUnbuiltDist = d;
-              }
-            }
+          if (random() < eps) {
+            // Unbuilt frontier beacon attraction dominates
+            score = (unbuiltBeacon * 3.0) + (random() * 5.0) + stalePenalty;
+          } else {
+            // ACO Stigmergy: trail + active build pheromone + unbuilt beacon
+            score = (trail * 2.0) + (buildPhero * 3.5) + unbuiltBeacon + (random() * 2.0) + stalePenalty;
           }
-          const unbuiltAttraction = 20.0 / (minUnbuiltDist + 1.0);
-
-          // ACO Combined Score
-          const score = (trail * 3.5) + (buildPhero * 6.0) + unbuiltAttraction + (random() * 2.5);
-          candidates.push({ x: nx, y: ny, score });
+        } else {
+          // Naive Baseline: unbuilt beacon + random walk without pheromones
+          score = unbuiltBeacon + (random() * 4.0) + stalePenalty;
         }
-      }
-    } else {
-      // Naive Baseline Mode: Greedy distance toward blueprint center + random walk without pheromones
-      for (const [dx, dy] of shuffled) {
-        const nx = robot.x + dx, ny = robot.y + dy;
-        if (inBounds(nx, ny) && !obstacles[nx][ny] && canTraverse(robot.x, robot.y, nx, ny)) {
-          let minUnbuiltDist = 40;
-          for (let ux = Math.max(0, nx - 10); ux <= Math.min(GRID - 1, nx + 10); ux++) {
-            for (let uy = Math.max(0, ny - 10); uy <= Math.min(GRID - 1, ny + 10); uy++) {
-              if (targetHeight[ux][uy] > currentHeight[ux][uy]) {
-                const d = Math.abs(ux - nx) + Math.abs(uy - ny);
-                if (d < minUnbuiltDist) minUnbuiltDist = d;
-              }
-            }
-          }
-          const score = (20.0 / (minUnbuiltDist + 1.0)) + (random() * 4.0);
-          candidates.push({ x: nx, y: ny, score });
-        }
+        candidates.push({ x: nx, y: ny, score });
       }
     }
 
@@ -669,6 +772,15 @@ const SimEngine = (function () {
     let totalWeight = 0;
     for (const c of bpCells) totalWeight += c.h;
 
+    // Compute blueprint wall bounding box
+    let minBx = GRID, maxBx = 0, minBy = GRID, maxBy = 0;
+    for (const c of bpCells) {
+      if (c.x < minBx) minBx = c.x;
+      if (c.x > maxBx) maxBx = c.x;
+      if (c.y < minBy) minBy = c.y;
+      if (c.y > maxBy) maxBy = c.y;
+    }
+
     function fitness(positions) {
       let totalDist = 0;
       let penalty = 0;
@@ -685,11 +797,20 @@ const SimEngine = (function () {
       for (const p of positions) {
         const px = Math.round(p.x), py = Math.round(p.y);
         if (!inBounds(px, py)) {
-          penalty += 2000;
+          penalty += 50000;
         } else {
-          // Strictly penalize placement on blueprint cells (depots must be on open ground)
-          if (th[px][py] > 0) penalty += 1500;
-          if (obs[px][py]) penalty += 1500;
+          // Strictly penalize placement inside or within 2 cells of blueprint walls bounding box
+          if (px >= minBx - 2 && px <= maxBx + 2 && py >= minBy - 2 && py <= maxBy + 2) {
+            penalty += 35000;
+          }
+          // Check proximity to any blueprint cell: must be at least 2 cells away
+          let minD = Infinity;
+          for (const c of bpCells) {
+            const d = Math.abs(c.x - px) + Math.abs(c.y - py);
+            if (d < minD) minD = d;
+          }
+          if (minD < 3) penalty += (3 - minD) * 15000;
+          if (obs[px][py]) penalty += 20000;
         }
       }
 
@@ -697,18 +818,18 @@ const SimEngine = (function () {
       for (let i = 0; i < positions.length; i++) {
         for (let j = i + 1; j < positions.length; j++) {
           const dist = Math.abs(positions[i].x - positions[j].x) + Math.abs(positions[i].y - positions[j].y);
-          if (dist < 8) penalty += (8 - dist) * 150;
+          if (dist < 8) penalty += (8 - dist) * 200;
         }
       }
       return totalDist / totalWeight + penalty;
     }
 
-    // Initialize particles across the outer perimeter
+    // Initialize particles across the outer perimeter (well outside bounding box)
     const particles = [];
     const perimeterSeeds = [
-      [{x: 2, y: 2}, {x: 29, y: 2}, {x: 2, y: 29}, {x: 29, y: 29}],
-      [{x: 16, y: 2}, {x: 29, y: 16}, {x: 16, y: 29}, {x: 2, y: 16}],
       [{x: 4, y: 4}, {x: 27, y: 4}, {x: 4, y: 27}, {x: 27, y: 27}],
+      [{x: 16, y: 3}, {x: 28, y: 16}, {x: 16, y: 28}, {x: 3, y: 16}],
+      [{x: 3, y: 3}, {x: 28, y: 3}, {x: 3, y: 28}, {x: 28, y: 28}],
     ];
 
     for (let i = 0; i < numParticles; i++) {
@@ -717,9 +838,9 @@ const SimEngine = (function () {
       const seedPattern = perimeterSeeds[i % perimeterSeeds.length];
 
       for (let d = 0; d < numDepots; d++) {
-        const sx = seedPattern[d].x + (random() - 0.5) * 6;
-        const sy = seedPattern[d].y + (random() - 0.5) * 6;
-        pos.push({ x: Math.max(1, Math.min(GRID - 2, sx)), y: Math.max(1, Math.min(GRID - 2, sy)) });
+        const sx = seedPattern[d].x + (random() - 0.5) * 4;
+        const sy = seedPattern[d].y + (random() - 0.5) * 4;
+        pos.push({ x: Math.max(2, Math.min(GRID - 3, sx)), y: Math.max(2, Math.min(GRID - 3, sy)) });
         vel.push({ x: (random() - 0.5) * 2, y: (random() - 0.5) * 2 });
       }
 
@@ -752,8 +873,8 @@ const SimEngine = (function () {
           part.vel[d].x = w * part.vel[d].x + c1 * r1 * (part.bestPos[d].x - part.pos[d].x) + c2 * r2 * (gBest[d].x - part.pos[d].x);
           part.vel[d].y = w * part.vel[d].y + c1 * r1 * (part.bestPos[d].y - part.pos[d].y) + c2 * r2 * (gBest[d].y - part.pos[d].y);
 
-          part.pos[d].x = Math.max(1, Math.min(GRID - 2, part.pos[d].x + part.vel[d].x));
-          part.pos[d].y = Math.max(1, Math.min(GRID - 2, part.pos[d].y + part.vel[d].y));
+          part.pos[d].x = Math.max(2, Math.min(GRID - 3, part.pos[d].x + part.vel[d].x));
+          part.pos[d].y = Math.max(2, Math.min(GRID - 3, part.pos[d].y + part.vel[d].y));
         }
 
         const rounded = part.pos.map(p => ({ x: Math.round(p.x), y: Math.round(p.y) }));
@@ -770,11 +891,18 @@ const SimEngine = (function () {
       }
     }
 
-    // Finalize rounded positions, guaranteeing they are off-structure
+    // Finalize rounded positions, strictly guaranteed outside bounding box and off-structure
     depots = gBest.map(p => {
-      let x = Math.max(1, Math.min(GRID - 2, Math.round(p.x)));
-      let y = Math.max(1, Math.min(GRID - 2, Math.round(p.y)));
-      // If landed on blueprint or obstacle, shift outward
+      let x = Math.max(2, Math.min(GRID - 3, Math.round(p.x)));
+      let y = Math.max(2, Math.min(GRID - 3, Math.round(p.y)));
+
+      // If inside bounding box margin, push out to closest perimeter
+      if (x >= minBx - 2 && x <= maxBx + 2 && y >= minBy - 2 && y <= maxBy + 2) {
+        if (x < (minBx + maxBx) / 2) x = Math.max(2, minBx - 3);
+        else x = Math.min(GRID - 3, maxBx + 3);
+      }
+
+      // If landed on obstacle, shift outward
       if (th[x][y] > 0 || obs[x][y]) {
         for (let r = 1; r < 10; r++) {
           let found = false;
@@ -875,11 +1003,13 @@ const SimEngine = (function () {
     // Logistics mode
     acoMode = config.acoEnabled !== undefined ? config.acoEnabled : (config.acoMode !== undefined ? config.acoMode : true);
 
-    // Initial Depots: run PSO or perimeter defaults
+    ticksSinceLastPlacement = 0;
+
+    // Initial Depots: default to outside quadrant depots (4,4), (4,27), (27,4), (27,27)
     if (config.depots && Array.isArray(config.depots) && config.depots !== "auto") {
       depots = config.depots.map(d => ({ x: d.x | 0, y: d.y | 0 }));
     } else {
-      runPSODepotPlacement(targetHeight, obstacles, 4);
+      depots = DEFAULT_DEPOTS.map(d => ({ x: d.x, y: d.y }));
     }
 
     depRank = compileDependencyRank(targetHeight, depots, obstacles);
@@ -980,7 +1110,10 @@ const SimEngine = (function () {
       }
     }
 
-    // 2. Fair random shuffle of robot execution order
+    // 2. Update multi-source unbuilt topological gradient
+    updateUnbuiltGradient();
+
+    // 3. Fair random shuffle of robot execution order
     const order = robots.map((_, i) => i);
     for (let i = order.length - 1; i > 0; i--) {
       const j = Math.floor(random() * (i + 1));
@@ -997,8 +1130,13 @@ const SimEngine = (function () {
       }
     }
 
-    // 3. Track throughput buffer
+    // 3. Track throughput buffer and placement cadence
     const placedThisTick = blocksPlaced - prevPlaced;
+    if (placedThisTick > 0) {
+      ticksSinceLastPlacement = Math.max(0, ticksSinceLastPlacement - 6);
+    } else {
+      ticksSinceLastPlacement++;
+    }
     throughputBuffer.push(placedThisTick);
     if (throughputBuffer.length > 100) throughputBuffer.shift();
 
@@ -1120,3 +1258,7 @@ const SimEngine = (function () {
     GRID,
   };
 })();
+
+if (typeof module !== "undefined" && module.exports) {
+  module.exports = SimEngine;
+}

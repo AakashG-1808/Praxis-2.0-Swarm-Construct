@@ -210,6 +210,7 @@ class SwarmSimulation:
 
         self.throughput_window = deque(maxlen=100)
         self.fault_injected = False
+        self.ticks_since_placement = 0
 
     def can_traverse(self, from_x, from_y, to_x, to_y):
         if not (0 <= to_x < GRID and 0 <= to_y < GRID):
@@ -222,6 +223,9 @@ class SwarmSimulation:
         """Inside-Out Anti-Trap Local Placement Rule (r=1 neighborhood)."""
         best_cell = None
         best_rank = -99999
+        remaining = self.total_blocks - self.blocks_placed
+        stalled_ticks = getattr(self, "ticks_since_placement", 0)
+        relax_anti_trap = (remaining <= 8 and stalled_ticks >= 15) or (stalled_ticks >= 30)
 
         for dx, dy in DIR4:
             bx, by = rx + dx, ry + dy
@@ -234,24 +238,25 @@ class SwarmSimulation:
             if self.obstacles[bx, by] or self.occupancy[bx, by] >= 0:
                 continue
 
-            # Anti-Trap Check: Higher dependency rank cells must already satisfy required step height
-            trapped = False
-            for ddx, ddy in DIR4:
-                nx, ny = bx + ddx, by + ddy
-                if not (0 <= nx < GRID and 0 <= ny < GRID):
-                    continue
-                if self.target_height[nx, ny] <= 0:
-                    continue
-                if self.dep_rank[nx, ny] <= self.dep_rank[bx, by]:
-                    continue
+            if not relax_anti_trap:
+                # Anti-Trap Check: Higher dependency rank cells must already satisfy required step height
+                trapped = False
+                for ddx, ddy in DIR4:
+                    nx, ny = bx + ddx, by + ddy
+                    if not (0 <= nx < GRID and 0 <= ny < GRID):
+                        continue
+                    if self.target_height[nx, ny] <= 0:
+                        continue
+                    if self.dep_rank[nx, ny] <= self.dep_rank[bx, by]:
+                        continue
 
-                req = min(self.target_height[nx, ny], self.current_height[bx, by] + 1)
-                if self.current_height[nx, ny] < req:
-                    trapped = True
-                    break
+                    req = min(self.target_height[nx, ny], self.current_height[bx, by] + 1)
+                    if self.current_height[nx, ny] < req:
+                        trapped = True
+                        break
 
-            if trapped:
-                continue
+                if trapped:
+                    continue
 
             r = self.dep_rank[bx, by]
             if r > best_rank:
@@ -475,6 +480,10 @@ class SwarmSimulation:
                     bot.stuck_ticks = 0
 
         placed_this_tick = self.blocks_placed - prev_placed
+        if placed_this_tick > 0:
+            self.ticks_since_placement = max(0, self.ticks_since_placement - 6)
+        else:
+            self.ticks_since_placement += 1
         self.throughput_window.append(placed_this_tick)
 
     def is_complete(self):

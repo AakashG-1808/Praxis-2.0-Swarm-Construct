@@ -1,6 +1,13 @@
 {
   "python.defaultInterpreterPath": "C:\\Users\\Aakas\\AppData\\Local\\Programs\\Python\\Python314\\python.exe",
+  "python.analysis.extraPaths": [
+    "C:\\Users\\Aakas\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages"
+  ],
+  "python.autoComplete.extraPaths": [
+    "C:\\Users\\Aakas\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages"
+  ],
   "python.analysis.diagnosticSeverityOverrides": {
-    "reportMissingImports": "none"
+    "reportMissingImports": "none",
+    "reportMissingModuleSource": "none"
   }
 }
