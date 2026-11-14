@@ -247,12 +247,14 @@ def pso_optimize_depots(target_height, obstacles, num_depots=4, rng=None):
 
 # ── Decentralized Robot Agent & Simulation Environment ──────────────────────
 class DecentralizedRobot:
-    __slots__ = ("id", "x", "y", "state", "carrying", "failed", "path_memory", "trip_steps", "stuck_ticks", "backoff_steps")
+    __slots__ = ("id", "x", "y", "initial_x", "initial_y", "state", "carrying", "failed", "path_memory", "trip_steps", "stuck_ticks", "backoff_steps")
 
     def __init__(self, bot_id, x, y):
         self.id = bot_id
         self.x = x
         self.y = y
+        self.initial_x = x
+        self.initial_y = y
         self.state = STATE_SEEK
         self.carrying = False
         self.failed = False
@@ -622,7 +624,15 @@ class SwarmSimulation:
             return False
         if self.obstacles[to_x, to_y]:
             return False
-        return abs(self.current_height[to_x, to_y] - self.current_height[from_x, from_y]) <= 1
+        from_h = self.current_height[from_x, from_y]
+        to_h = self.current_height[to_x, to_y]
+        if to_h > from_h:
+            return (to_h - from_h) <= 1
+        if to_h == from_h or (from_h - to_h) <= 1:
+            return True
+        if (self.total_blocks > 0 and self.blocks_placed >= self.total_blocks) or from_h >= 2:
+            return True
+        return False
 
     def find_placement_cell(self, rx, ry):
         """Inside-Out Anti-Trap Local Placement Rule (r=1 neighborhood) with multi-phase dependency."""

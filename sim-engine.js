@@ -27,8 +27,9 @@ const SimEngine = (function () {
     INSPECT_AND_PLACE: 2,
     YIELD_AND_BACKOFF: 3,
     RECHARGE: 4,
+    RETURN_HOME: 5,
   };
-  const STATE_NAMES = ["SEEK", "CARRY", "INSPECT", "YIELD", "RECHARGE"];
+  const STATE_NAMES = ["SEEK", "CARRY", "INSPECT", "YIELD", "RECHARGE", "HOME"];
 
   const DIR4 = [
     [1, 0],
@@ -852,7 +853,24 @@ const SimEngine = (function () {
     if (isHazardCell(toX, toY)) return false;
     const fromH = currentHeight[fromX][fromY];
     const toH = currentHeight[toX][toY];
-    return Math.abs(toH - fromH) <= 1;
+    // Climbing UP: strictly at most 1 block height increase under TERMES rules
+    if (toH > fromH) {
+      // During return home / evacuation, if trapped inside an enclosed hole, allow stepping onto wall (<= 2) to escape
+      if ((totalBlocks > 0 && blocksPlaced >= totalBlocks) && (toH - fromH) <= 2) return true;
+      return (toH - fromH) <= 1;
+    }
+    // Moving on same tier: always valid
+    if (toH === fromH) return true;
+    // Stepping down 1 level: always valid
+    if (fromH - toH <= 1) return true;
+    // Controlled descent off elevated structure:
+    // When construction is complete (or robot is in RETURN_HOME / evacuating),
+    // or when standing on an elevated wall (fromH >= 2) with no 1-step ramp down,
+    // descending toward ground level (toH < fromH) is permitted so robots never get stranded on roofs/pillars!
+    if ((totalBlocks > 0 && blocksPlaced >= totalBlocks) || fromH >= 2) {
+      return true;
+    }
+    return false;
   }
 
   // ── Local Placement Rule & Inside-Out Anti-Trap Check ─────────────────────
@@ -1036,22 +1054,39 @@ const SimEngine = (function () {
     return count;
   }
 
+  function getRobotsAtHomeCount() {
+    let count = 0;
+    if (!robots || !currentHeight) return 0;
+    for (const r of robots) {
+      if (r.failed) continue;
+      const curH = inBounds(r.x, r.y) ? currentHeight[r.x][r.y] : 0;
+      if (curH === 0) {
+        const hx = r.initialX !== undefined ? r.initialX : r.x;
+        const hy = r.initialY !== undefined ? r.initialY : r.y;
+        if (Math.abs(r.x - hx) + Math.abs(r.y - hy) <= 1) {
+          count++;
+        }
+      }
+    }
+    return count;
+  }
+
   // ── Decentralized Robot Agent FSM ─────────────────────────────────────────
   function stepRobot(robot) {
     if (robot.failed) return;
 
-    // If construction complete, drop carried blocks and evacuate down to ground level
+    // If construction complete, drop carried blocks and return to initial spawn spots
     if (totalBlocks > 0 && blocksPlaced >= totalBlocks) {
       robot.carrying = false;
-      if (robot.state === STATES.CARRY_TO_BUILD || robot.state === STATES.INSPECT_AND_PLACE) {
-        robot.state = STATES.SEEK_MATERIAL;
+      if (robot.state !== STATES.RETURN_HOME) {
+        robot.state = STATES.RETURN_HOME;
       }
     }
 
     // Real-world battery drain & auto-recharge logic
     if (batteryEnabled) {
       robot.battery = Math.max(0, (robot.battery !== undefined ? robot.battery : 100.0) - 0.08);
-      if (robot.battery < 20.0 && robot.state !== STATES.RECHARGE) {
+      if (robot.battery < 20.0 && robot.state !== STATES.RECHARGE && robot.state !== STATES.RETURN_HOME) {
         robot.state = STATES.RECHARGE;
       }
     }
@@ -1072,6 +1107,9 @@ const SimEngine = (function () {
       case STATES.RECHARGE:
         stepRecharge(robot);
         break;
+      case STATES.RETURN_HOME:
+        stepReturnHome(robot);
+        break;
     }
   }
 
@@ -1083,9 +1121,10 @@ const SimEngine = (function () {
     if (isDepot(robot.x, robot.y)) {
       if (batteryEnabled) robot.battery = 100.0;
       if (blocksPlaced >= totalBlocks) {
-        // Build is complete: rest peacefully at depot on ground level!
+        // Build is complete: return home to initial position!
         robot.carrying = false;
-        robot.state = STATES.SEEK_MATERIAL;
+        robot.state = STATES.RETURN_HOME;
+        stepReturnHome(robot);
         return;
       }
       robot.carrying = true;
@@ -1212,6 +1251,171 @@ const SimEngine = (function () {
   }
 
   /**
+   * Find shortest obstacle-free ground step avoiding structures (currentHeight > 0)
+   * so returning robots smoothly route around letters, walls, and obstacles.
+   */
+  function findGroundStep(sx, sy, gx, gy) {
+    if (sx === gx && sy === gy) return null;
+    const w = gridWidth, h = gridHeight;
+    const total = w * h;
+    const qx = new Int16Array(total), qy = new Int16Array(total);
+    const parent = new Int32Array(total).fill(-1);
+    const visited = new Uint8Array(total);
+    let head = 0, tail = 0;
+    qx[tail] = sx; qy[tail] = sy; tail++;
+    visited[sx + sy * w] = 1;
+    const D = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    const targetIdx = (obstacles[gx] && obstacles[gx][gy]) || (currentHeight[gx] && currentHeight[gx][gy] > 0) ? -1 : (gx + gy * w);
+
+    while (head < tail) {
+      const cx = qx[head], cy = qy[head]; head++;
+      if (targetIdx !== -1 ? (cx === gx && cy === gy) : (Math.abs(cx - gx) + Math.abs(cy - gy) <= 1)) {
+        let curr = cx + cy * w;
+        while (parent[curr] !== -1 && parent[curr] !== (sx + sy * w)) {
+          curr = parent[curr];
+        }
+        return { x: curr % w, y: Math.floor(curr / w) };
+      }
+      for (let i = 0; i < 4; i++) {
+        const nx = cx + D[i][0], ny = cy + D[i][1];
+        if (nx >= 0 && nx < w && ny >= 0 && ny < h && !obstacles[nx][ny] && currentHeight[nx][ny] === 0) {
+          const idx = nx + ny * w;
+          if (!visited[idx]) {
+            visited[idx] = 1;
+            parent[idx] = cx + cy * w;
+            qx[tail] = nx; qy[tail] = ny; tail++;
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  /**
+   * STATE 6: RETURN_HOME
+   * When construction is complete, all robots return to their initial spawn positions.
+   * Robots on elevated structures descend down to ground level first, then follow
+   * ground path back to (robot.initialX, robot.initialY).
+   */
+  function stepReturnHome(robot) {
+    robot.carrying = false;
+    const curH = inBounds(robot.x, robot.y) ? currentHeight[robot.x][robot.y] : 0;
+    const homeX = robot.initialX !== undefined ? robot.initialX : robot.x;
+    const homeY = robot.initialY !== undefined ? robot.initialY : robot.y;
+
+    // Check if robot is already home at ground level
+    if (robot.x === homeX && robot.y === homeY && curH === 0) {
+      robot.stuckTicks = 0;
+      return;
+    }
+
+    // Check if parked directly adjacent to home at ground level (if home cell is occupied)
+    const distToHome = Math.abs(robot.x - homeX) + Math.abs(robot.y - homeY);
+    if (distToHome <= 2 && curH === 0) {
+      const homeOccupant = robotGrid[homeX][homeY];
+      if (homeOccupant !== null && homeOccupant.id !== robot.id) {
+        robot.stuckTicks = 0;
+        return;
+      }
+    }
+
+    // 1. If currently on a structure (curH > 0): PRIORITY #1 is to step DOWN toward ground level
+    if (curH > 0) {
+      const candidates = [];
+      const shuffled = shuffleDir4();
+      for (const [dx, dy] of shuffled) {
+        const nx = robot.x + dx, ny = robot.y + dy;
+        if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+          const nH = currentHeight[nx][ny];
+          if (nH < curH) {
+            const dHome = Math.abs(nx - homeX) + Math.abs(ny - homeY);
+            const score = (curH - nH) * 1000 - dHome;
+            candidates.push({ x: nx, y: ny, score });
+          } else if (nH === curH) {
+            const dHome = Math.abs(nx - homeX) + Math.abs(ny - homeY);
+            candidates.push({ x: nx, y: ny, score: -dHome });
+          }
+        }
+      }
+      if (candidates.length > 0) {
+        candidates.sort((a, b) => b.score - a.score);
+        for (const c of candidates) {
+          if (tryMove(robot, c.x, c.y)) return;
+        }
+      }
+      // If blocked, try any open neighbor with height <= curH
+      for (const [dx, dy] of shuffled) {
+        const nx = robot.x + dx, ny = robot.y + dy;
+        if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+          if (currentHeight[nx][ny] <= curH && tryMove(robot, nx, ny)) return;
+        }
+      }
+      return;
+    }
+
+    // 2. On ground level (curH === 0): follow shortest ground path to (homeX, homeY)
+    const nextStep = findGroundStep(robot.x, robot.y, homeX, homeY);
+    if (nextStep && tryMove(robot, nextStep.x, nextStep.y)) {
+      robot.stuckTicks = 0;
+      return;
+    }
+
+    // If enclosed inside a courtyard/room with no ground exit, allow stepping onto the wall to escape!
+    if (!nextStep) {
+      const shuffled = shuffleDir4();
+      for (const [dx, dy] of shuffled) {
+        const nx = robot.x + dx, ny = robot.y + dy;
+        if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+          if (tryMove(robot, nx, ny)) {
+            robot.stuckTicks = 0;
+            return;
+          }
+        }
+      }
+    }
+
+    // Fallback: try closest ground neighbor
+    const candidates = [];
+    const shuffled = shuffleDir4();
+    for (const [dx, dy] of shuffled) {
+      const nx = robot.x + dx, ny = robot.y + dy;
+      if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && canTraverse(robot.x, robot.y, nx, ny)) {
+        if (currentHeight[nx][ny] > 0) continue; // Never climb back onto structure when heading home
+        const nDist = Math.abs(nx - homeX) + Math.abs(ny - homeY);
+        candidates.push({ x: nx, y: ny, dist: nDist });
+      }
+    }
+
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => a.dist - b.dist);
+      let moved = false;
+      for (const c of candidates) {
+        if (tryMove(robot, c.x, c.y)) {
+          moved = true;
+          robot.stuckTicks = 0;
+          break;
+        }
+      }
+      if (!moved) {
+        robot.stuckTicks++;
+        if (robot.stuckTicks > 2) {
+          for (const [dx, dy] of shuffled) {
+            const nx = robot.x + dx, ny = robot.y + dy;
+            if (inBounds(nx, ny) && !obstacles[nx][ny] && !isHazardCell(nx, ny) && currentHeight[nx][ny] === 0) {
+              if (tryMove(robot, nx, ny)) {
+                robot.stuckTicks = 0;
+                break;
+              }
+            }
+          }
+        }
+      }
+    } else {
+      robot.stuckTicks++;
+    }
+  }
+
+  /**
    * Multi-source topological BFS wavefront from all uncompleted target cells.
    * Guides carrying robots through doorways, around high walls, and directly to the active build frontier.
    */
@@ -1285,11 +1489,11 @@ const SimEngine = (function () {
    * Move toward active build zones using ACO stigmergy + active build site attraction.
    */
   function stepCarryToBuild(robot) {
-    // If all blocks placed, drop carried block and immediately evacuate structure down to ground
+    // If all blocks placed, drop carried block and return home to initial position
     if (blocksPlaced >= totalBlocks) {
       robot.carrying = false;
-      robot.state = STATES.SEEK_MATERIAL;
-      stepSeekMaterial(robot);
+      robot.state = STATES.RETURN_HOME;
+      stepReturnHome(robot);
       return;
     }
 
@@ -1500,7 +1704,11 @@ const SimEngine = (function () {
 
     robot.backoffSteps = (robot.backoffSteps || 1) - 1;
     if (robot.backoffSteps <= 0) {
-      robot.state = (robot.carrying && blocksPlaced < totalBlocks) ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
+      if (totalBlocks > 0 && blocksPlaced >= totalBlocks) {
+        robot.state = STATES.RETURN_HOME;
+      } else {
+        robot.state = robot.carrying ? STATES.CARRY_TO_BUILD : STATES.SEEK_MATERIAL;
+      }
       robot.stuckTicks = 0;
     }
   }
@@ -2036,6 +2244,8 @@ const SimEngine = (function () {
                 id: i,
                 x: rx,
                 y: ry,
+                initialX: rx,
+                initialY: ry,
                 role: role,
                 battery: 100.0,
                 state: STATES.SEEK_MATERIAL,
@@ -2062,6 +2272,8 @@ const SimEngine = (function () {
                 id: i,
                 x,
                 y,
+                initialX: x,
+                initialY: y,
                 role: role,
                 battery: 100.0,
                 state: STATES.SEEK_MATERIAL,
@@ -2162,6 +2374,7 @@ const SimEngine = (function () {
     const activeCount = robots.filter(r => !r.failed).length;
     const failedCount = robots.filter(r => r.failed).length;
     const onStructureCount = getRobotsOnStructureCount();
+    const atHomeCount = getRobotsAtHomeCount();
 
     return {
       tick: tickCount,
@@ -2170,7 +2383,9 @@ const SimEngine = (function () {
       activeRobots: activeCount,
       failedRobots: failedCount,
       robotsOnStructure: onStructureCount,
+      robotsAtHome: atHomeCount,
       evacuating: totalBlocks > 0 && blocksPlaced >= totalBlocks && onStructureCount > 0,
+      returningHome: totalBlocks > 0 && blocksPlaced >= totalBlocks,
       throughputBuffer: throughputBuffer.slice(),
     };
   }
@@ -2197,6 +2412,8 @@ const SimEngine = (function () {
         id: r.id,
         x: r.x,
         y: r.y,
+        initialX: r.initialX,
+        initialY: r.initialY,
         role: r.role || "builder",
         battery: r.battery !== undefined ? Math.round(r.battery) : 100,
         state: r.state,
@@ -2208,7 +2425,9 @@ const SimEngine = (function () {
       blocksPlaced,
       totalBlocks,
       robotsOnStructure: getRobotsOnStructureCount(),
+      robotsAtHome: getRobotsAtHomeCount(),
       evacuating: totalBlocks > 0 && blocksPlaced >= totalBlocks && getRobotsOnStructureCount() > 0,
+      returningHome: totalBlocks > 0 && blocksPlaced >= totalBlocks,
       acoMode,
       heterogeneousRoles,
       batteryEnabled,
@@ -2283,7 +2502,24 @@ const SimEngine = (function () {
     isComplete: function () {
       if (totalBlocks <= 0 || blocksPlaced < totalBlocks) return false;
       const onStructure = getRobotsOnStructureCount();
-      if (onStructure > 0 && evacuationTicks < 50) return false;
+      if (onStructure > 0 && evacuationTicks < 150) return false;
+
+      const activeRobots = robots ? robots.filter(r => !r.failed) : [];
+      let allHome = true;
+      for (const r of activeRobots) {
+        const curH = (currentHeight && inBounds(r.x, r.y)) ? currentHeight[r.x][r.y] : 0;
+        if (curH > 0) {
+          allHome = false;
+          break;
+        }
+        const hx = r.initialX !== undefined ? r.initialX : r.x;
+        const hy = r.initialY !== undefined ? r.initialY : r.y;
+        if (Math.abs(r.x - hx) + Math.abs(r.y - hy) > 1) {
+          allHome = false;
+          break;
+        }
+      }
+      if (!allHome && evacuationTicks < 250) return false;
       return true;
     },
     setACOEnabled: function (val) {

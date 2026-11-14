@@ -2461,12 +2461,18 @@
       const pct = total > 0 ? ((placed / total) * 100).toFixed(1) : "0.0";
 
       const progEl = document.getElementById("t-progress");
+      const activeCount = state.robots ? state.robots.filter(r => !r.failed).length : 0;
       if (state.evacuating) {
-        progEl.textContent = `${placed} / ${total} (${pct}%) 🚶 Evacuating (${state.robotsOnStructure} on tiers)`;
+        progEl.textContent = `${placed} / ${total} (${pct}%) 🚶 Evacuating Structure (${state.robotsOnStructure} on tiers)`;
         progEl.style.color = "#38bdf8";
       } else if (placed >= total && total > 0) {
-        progEl.textContent = `${placed} / ${total} (${pct}%) ✨ 100% Cleared`;
-        progEl.style.color = "#10b981";
+        if (state.robotsAtHome !== undefined && state.robotsAtHome < activeCount) {
+          progEl.textContent = `${placed} / ${total} (${pct}%) 🏠 Returning Home (${state.robotsAtHome}/${activeCount} at base)`;
+          progEl.style.color = "#38bdf8";
+        } else {
+          progEl.textContent = `${placed} / ${total} (${pct}%) ✨ 100% Cleared (All Bots Home)`;
+          progEl.style.color = "#10b981";
+        }
       } else {
         progEl.textContent = `${placed} / ${total} (${pct}%)`;
         progEl.style.color = "";
@@ -3330,6 +3336,7 @@
               case 1: ctx.fillStyle = "#f59e0b"; break; // CARRY
               case 2: ctx.fillStyle = "#10b981"; break; // INSPECT
               case 3: ctx.fillStyle = "#a855f7"; break; // YIELD
+              case 5: ctx.fillStyle = "#22d3ee"; break; // HOME
               default: ctx.fillStyle = "#38bdf8";
             }
           }
@@ -3552,6 +3559,7 @@
           else if (bot.state === 1) col = "#f59e0b"; // CARRY
           else if (bot.state === 2) col = "#10b981"; // INSPECT
           else if (bot.state === 3) col = "#a855f7"; // YIELD
+          else if (bot.state === 5) col = "#22d3ee"; // HOME
 
           // Selection halo ring in 3D
           if (bot.id === selectedRobotId) {
